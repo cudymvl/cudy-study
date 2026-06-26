@@ -229,7 +229,7 @@ export type PermissionBehavior = 'allow' | 'deny' | 'ask'</code></pre>
 
     <!-- 예시 2: PermissionRule 타입 구조 -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/types/permissions.ts:54-80</code> — 권한 규칙의 출처·행동·대상 구조</figcaption>
+      <figcaption><code class="src">src/types/permissions.ts:51-80</code> — 권한 규칙의 출처·행동·대상 구조</figcaption>
       <pre><code class="language-typescript">/**
  * Where a permission rule originated from.
  * Includes all SettingSource values plus additional rule-specific sources.
@@ -264,7 +264,7 @@ export type PermissionRule = {
 
     <!-- 예시 3: 권한 판정 파이프라인 핵심 단계 -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/utils/permissions/permissions.ts:1185-1325</code> — 7단계 권한 판정 파이프라인 (핵심 발췌)</figcaption>
+      <figcaption><code class="src">src/utils/permissions/permissions.ts:1185-1363</code> — 7단계 권한 판정 파이프라인 (핵심 발췌)</figcaption>
       <pre><code class="language-typescript">async function hasPermissionsToUseToolInner(
   tool: Tool,
   input: { [key: string]: unknown },
