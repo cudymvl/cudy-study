@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>툴 시스템 — openclaude 학습</title>
+  <!-- 이 파일은 저장소 루트에 위치. 경로는 루트 기준. -->
+  <link rel="stylesheet" href="assets/style.css">
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Mermaid.js -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-architecture.html">0·조감도</a>
+  <a href="01-one-turn.html">1·한 턴</a>
+  <a href="02-agent-loop.html">2·루프</a>
+  <a href="03-tool-system.html" class="active">3·툴</a>
+  <a href="04-context-engineering.html">4·컨텍스트</a>
+  <a href="05-multi-model.html">5·멀티모델</a>
+  <a href="06-subagents-orchestration.html">6·서브에이전트</a>
+  <a href="07-extensibility.html">7·확장성</a>
+  <a href="08-permissions.html">8·권한</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 3</span>
+    <h1>툴 시스템</h1>
+    <p class="subtitle">LLM의 유일한 외부 상호작용 통로 — 스키마 정의, 권한 게이트, 실행, 결과 직렬화, 지연 로딩의 모든 것</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      LLM은 본질적으로 텍스트 인/아웃 함수다. 파일을 읽거나 셸 명령을 실행하거나
+      웹을 검색하는 능력은 모델 가중치에 없다. 그 모든 능력은 <strong>툴(tool)</strong>을 통해서만 얻는다.
+      Module 2에서 살펴본 에이전트 루프가 "언제 툴을 부르는가"의 이야기라면,
+      이번 모듈은 <strong>툴 그 자체 — 어떻게 정의되고, LLM에 어떻게 노출되며,
+      어떻게 실행·검증·결과화 되는가</strong>의 이야기다.
+    </p>
+    <p>
+      핵심 아이디어 하나를 먼저 잡자: <strong>스키마(schema)가 곧 LLM의 API 문서다.</strong>
+      사람이 라이브러리 문서를 읽고 함수를 호출하듯, LLM은 각 툴의 JSON Schema를
+      읽고 인자를 조립한다. 스키마가 모호하면 LLM은 잘못된 인자를 만들고,
+      스키마가 정밀하면 LLM은 정확한 인자를 만든다.
+      이것이 툴 설계가 단순한 "인터페이스 정의"를 넘어 <strong>프롬프트 엔지니어링</strong>임을 뜻한다.
+    </p>
+    <div class="callout">
+      <strong>Module 2와의 구분:</strong> Module 2는 루프가 툴 콜을 <em>발급</em>하는 흐름을 다뤘다.
+      이 모듈은 툴 추상화 <em>자체</em> — 인터페이스 구조, 검증, 권한, 결과 직렬화 — 를 다룬다.
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>툴 생명주기 플로우차트</h2>
+    <p>
+      하나의 툴 콜이 LLM 응답에서 출발해 결과로서 모델에 재투입되기까지의 전 과정이다.
+      각 단계는 독립된 책임을 가지며, 어느 단계에서든 거부·에러가 발생하면
+      그 사실 자체가 모델로 돌아간다.
+    </p>
+    <pre class="mermaid">
+flowchart TD
+    A["툴 정의\n(name · inputSchema · call · checkPermissions)"] -->|buildTool| B["레지스트리 등록\ngetAllBaseTools()"]
+    B -->|assembleToolPool| C["툴 풀 조립\n(빌트인 + MCP, 알파벳 정렬)"]
+    C -->|isToolSearchEnabled| D{지연 로딩?}
+    D -->|아니오| E["전체 스키마 노출\n(Anthropic API tools[])"]
+    D -->|예| F["defer_loading: true\n일부 스키마만 노출"]
+    F -->|LLM이 ToolSearch 호출| G["ToolSearch\n키워드 매칭 → tool_reference 반환"]
+    G --> E
+    E -->|LLM 응답| H["tool_use 블록 수신\n{name, input, id}"]
+    H --> I["validateInput\n(입력 의미 검증)"]
+    I -->|실패| J["tool_result: error\n모델에 재투입"]
+    I -->|통과| K["checkPermissions\n(파일경로·명령·모드 검사)"]
+    K -->|거부| L["사용자 확인 요청\n또는 자동 거부"]
+    L --> J
+    K -->|허용| M["call() 실행\n(실제 I/O 수행)"]
+    M --> N["ToolResult 반환\n{data, newMessages?}"]
+    N --> O["mapToolResultToToolResultBlockParam\n(Output → ToolResultBlockParam)"]
+    O --> P["tool_result 블록\n대화 컨텍스트에 삽입"]
+    P -->|다음 API 호출| Q["LLM 재투입\n다음 추론 시작"]
+    </pre>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>3-1. Tool 인터페이스 구조</h3>
+    <p>
+      <code>src/Tool.ts</code>에 정의된 <code>Tool&lt;Input, Output, P&gt;</code> 타입은
+      모든 툴이 반드시 구현해야 하는 계약이다.
+      핵심 멤버 다섯 가지를 먼저 이해하자.
+    </p>
+    <table>
+      <thead>
+        <tr><th>멤버</th><th>역할</th><th>LLM과의 관계</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>name</code></td>
+          <td>툴 식별자 문자열</td>
+          <td>LLM이 tool_use.name으로 지정하는 값</td>
+        </tr>
+        <tr>
+          <td><code>inputSchema</code></td>
+          <td>Zod 스키마 (JSON Schema로 직렬화)</td>
+          <td>LLM의 "API 문서" — 인자 타입·설명·제약</td>
+        </tr>
+        <tr>
+          <td><code>call()</code></td>
+          <td>실제 I/O 수행 함수</td>
+          <td>LLM은 이 함수 존재를 모름; 결과만 받음</td>
+        </tr>
+        <tr>
+          <td><code>checkPermissions()</code></td>
+          <td>권한 게이트 — 허용/거부/사용자 확인</td>
+          <td>LLM에 투명; 거부 시 error tool_result</td>
+        </tr>
+        <tr>
+          <td><code>mapToolResultToToolResultBlockParam()</code></td>
+          <td>Output → Anthropic SDK ToolResultBlockParam</td>
+          <td>LLM이 받는 직렬화 형식</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      나머지 멤버들(<code>validateInput</code>, <code>isReadOnly</code>, <code>isConcurrencySafe</code>,
+      <code>renderToolResultMessage</code> 등)은 검증·UI·분류 보조 역할이다.
+      <code>shouldDefer</code>/<code>alwaysLoad</code> 플래그는 지연 로딩 전략에서 다룬다.
+    </p>
+
+    <h3>3-2. buildTool과 기본값 채우기</h3>
+    <p>
+      모든 툴은 직접 <code>Tool</code> 타입을 구현하지 않고
+      <code>buildTool(def)</code> 헬퍼를 거친다.
+      이 함수는 <code>{ ...TOOL_DEFAULTS, ...def }</code>를 수행해
+      자주 생략되는 메서드에 <strong>실패 안전(fail-closed)</strong> 기본값을 채운다.
+    </p>
+    <blockquote>
+      기본값 철학: <code>isConcurrencySafe</code> → false (동시 실행 불가 가정),
+      <code>isReadOnly</code> → false (쓰기 가능 가정),
+      <code>checkPermissions</code> → allow (범용 권한 시스템에 위임).
+      보안에 영향을 주는 방향으로는 항상 더 제한적인 방향을 기본으로 삼는다.
+    </blockquote>
+
+    <h3>3-3. 입력 검증 — LLM 바깥에서 해야 하는 이유</h3>
+    <p>
+      LLM이 생성한 인자는 스키마에 맞더라도 <em>의미</em>가 잘못될 수 있다
+      (존재하지 않는 파일 경로, 막힌 sleep 패턴, UNC 경로 보안 우회 등).
+      <code>validateInput()</code>은 이를 잡아내 에러 메시지를 모델에 돌려주는 두 번째 방어선이다.
+    </p>
+    <p>
+      검증을 LLM 안에서 하지 않는 이유는 단순하다:
+      LLM은 동일 입력에 동일한 오류를 반복할 수 있고, 부작용 없는 검증이 불가하다.
+      그러나 코드 검증은 결정론적이며 부작용이 없다.
+      <strong>신뢰 경계(trust boundary)는 LLM 출력과 시스템 경계 사이에 있어야 한다.</strong>
+    </p>
+
+    <h3>3-4. 권한 게이트 — checkPermissions</h3>
+    <p>
+      <code>validateInput</code>이 통과한 후에만 <code>checkPermissions</code>가 호출된다.
+      반환 타입 <code>PermissionResult</code>는 세 가지 행동 중 하나다:
+      <code>'allow'</code>(즉시 실행), <code>'ask'</code>(사용자 확인), <code>'reject'</code>(거부).
+      각 툴은 자체 로직을 구현할 수 있고(BashTool의 명령어 패턴 매칭,
+      GrepTool의 파일 읽기 경로 확인), 생략하면 범용 권한 시스템이 처리한다.
+    </p>
+
+    <h3>3-5. 결과 직렬화 — mapToolResultToToolResultBlockParam</h3>
+    <p>
+      <code>call()</code>이 반환하는 <code>ToolResult&lt;Output&gt;</code>은
+      TypeScript 타입이다. Anthropic API에 보내려면
+      <code>ToolResultBlockParam</code> 형식(<code>type: 'tool_result', tool_use_id, content</code>)
+      으로 변환해야 한다. 이 변환이 <code>mapToolResultToToolResultBlockParam</code>이다.
+    </p>
+    <p>
+      툴마다 변환 방식이 다르다:
+      BashTool은 stdout·stderr를 문자열로 이어붙이고,
+      GrepTool은 모드(content/files_with_matches/count)에 따라 다른 포맷을 만든다.
+      ToolSearchTool은 <code>tool_reference</code> 블록 배열을 반환하는 특수 포맷을 사용한다.
+    </p>
+
+    <h3>3-6. ToolSearch와 지연 로딩 — 컨텍스트 절약 전략</h3>
+    <p>
+      툴이 많아질수록 시스템 프롬프트의 툴 스키마 섹션이 수천 토큰을 차지한다.
+      MCP 서버를 여러 개 연결하면 수십~수백 개의 툴이 등록될 수 있다.
+    </p>
+    <p>
+      해법은 <strong>지연 로딩(deferred loading)</strong>이다.
+      <code>shouldDefer: true</code>인 툴은 API 호출 시 <code>defer_loading: true</code> 플래그와 함께
+      스키마 없이 이름만 전달된다. LLM이 그 툴을 쓰고 싶으면
+      먼저 <code>ToolSearch</code>를 호출해 풀 스키마를 받은 후 사용한다.
+      이 추가 왕복(round-trip)은 컨텍스트 비용을 크게 줄인다.
+    </p>
+    <p>
+      반대로 <code>alwaysLoad: true</code>인 툴은 지연 없이 첫 번째 프롬프트부터 스키마가 노출된다.
+      첫 턴에 반드시 사용해야 하는 툴(예: ToolSearch 자체)에 쓴다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 코드 예시 -->
+  <section id="code">
+    <h2>실제 코드 예시</h2>
+
+    <!-- 예시 1: Tool 인터페이스 핵심 멤버 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/Tool.ts:391–414</code> — Tool 제네릭 타입의 필수 멤버 (전체 인터페이스에서 핵심 부분 발췌; 렌더링·UI 멤버 등은 생략)</figcaption>
+      <pre><code class="language-typescript">export type Tool&lt;
+  Input extends AnyObject = AnyObject,
+  Output = unknown,
+  P extends ToolProgressData = ToolProgressData,
+&gt; = {
+  readonly name: string
+  readonly inputSchema: Input
+  call(
+    args: z.infer&lt;Input&gt;,
+    context: ToolUseContext,
+    canUseTool: CanUseToolFn,
+    parentMessage: AssistantMessage,
+    onProgress?: ToolCallProgress&lt;P&gt;,
+  ): Promise&lt;ToolResult&lt;Output&gt;&gt;
+  checkPermissions(
+    input: z.infer&lt;Input&gt;,
+    context: ToolUseContext,
+  ): Promise&lt;PermissionResult&gt;
+  mapToolResultToToolResultBlockParam(
+    content: Output,
+    toolUseID: string,
+  ): ToolResultBlockParam
+  // … 렌더링·UI·분류 멤버는 생략
+}</code></pre>
+    </figure>
+
+    <!-- 예시 2: buildTool과 TOOL_DEFAULTS -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/Tool.ts:786–821</code> — buildTool: 기본값 스프레드 패턴</figcaption>
+      <pre><code class="language-typescript">const TOOL_DEFAULTS = {
+  isEnabled: () => true,
+  isConcurrencySafe: (_input?: unknown) =&gt; false,  // 보수적 기본값
+  isReadOnly: (_input?: unknown) =&gt; false,           // 쓰기 가능 가정
+  isDestructive: (_input?: unknown) =&gt; false,
+  checkPermissions: (
+    input: { [key: string]: unknown },
+    _ctx?: ToolUseContext,
+  ): Promise&lt;PermissionResult&gt; =&gt;
+    Promise.resolve({ behavior: 'allow', updatedInput: input }),
+  toAutoClassifierInput: (_input?: unknown) =&gt; '',
+  userFacingName: (_input?: unknown) =&gt; '',
+}
+
+export function buildTool&lt;D extends AnyToolDef&gt;(def: D): BuiltTool&lt;D&gt; {
+  return {
+    ...TOOL_DEFAULTS,
+    userFacingName: () =&gt; def.name,
+    ...def,                          // def가 기본값을 오버라이드
+  } as BuiltTool&lt;D&gt;
+}</code></pre>
+    </figure>
+
+    <!-- 예시 3: FileEditTool 입력 스키마 선언 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/FileEditTool/types.ts:6–20</code> — Zod 스키마가 곧 LLM의 API 문서 (각 .describe()가 툴 설명서 역할)</figcaption>
+      <pre><code class="language-typescript">const inputSchema = lazySchema(() =&gt;
+  z.strictObject({
+    file_path: z.string().describe('The absolute path to the file to modify'),
+    old_string: z.string().describe('The text to replace'),
+    new_string: z
+      .string()
+      .describe(
+        'The text to replace it with (must be different from old_string)',
+      ),
+    replace_all: semanticBoolean(
+      z.boolean().default(false).optional(),
+    ).describe('Replace all occurrences of old_string (default false)'),
+  }),
+)
+type InputSchema = ReturnType&lt;typeof inputSchema&gt;</code></pre>
+    </figure>
+
+    <!-- 예시 4: GrepTool checkPermissions + validateInput -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/GrepTool/GrepTool.ts:205–244</code> — 두 단계 검증: validateInput(의미 검사) → checkPermissions(권한 검사)</figcaption>
+      <pre><code class="language-typescript">async validateInput({ path }): Promise&lt;ValidationResult&gt; {
+  if (path) {
+    const fs = getFsImplementation()
+    const absolutePath = expandPath(path)
+    // SECURITY: UNC 경로는 NTLM 자격증명 유출 방지를 위해 스킵
+    if (absolutePath.startsWith('\\\\') || absolutePath.startsWith('//')) {
+      return { result: true }
+    }
+    try {
+      await fs.stat(absolutePath)
+    } catch (e: unknown) {
+      if (isENOENT(e)) {
+        return {
+          result: false,
+          message: `Path does not exist: ${path}. …`,
+          errorCode: 1,
+        }
+      }
+      throw e
+    }
+  }
+  return { result: true }
+},
+async checkPermissions(input, context): Promise&lt;PermissionDecision&gt; {
+  const appState = context.getAppState()
+  return checkReadPermissionForTool(
+    GrepTool,
+    input,
+    appState.toolPermissionContext,
+  )
+},</code></pre>
+    </figure>
+
+    <!-- 예시 5: BashTool mapToolResultToToolResultBlockParam -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/BashTool/BashTool.tsx:562–631</code> — 결과 직렬화: TypeScript Output → Anthropic API ToolResultBlockParam (대용량 출력 디스크 저장 분기 포함; 중간 분기 일부 생략)</figcaption>
+      <pre><code class="language-typescript">mapToolResultToToolResultBlockParam({
+  interrupted,
+  stdout,
+  stderr,
+  isImage,
+  backgroundTaskId,
+  persistedOutputPath,
+  persistedOutputSize,
+  structuredContent,
+  // …생략
+}, toolUseID): ToolResultBlockParam {
+  // 구조화 콘텐츠 (MCP structured output)
+  if (structuredContent && structuredContent.length &gt; 0) {
+    return { tool_use_id: toolUseID, type: 'tool_result', content: structuredContent }
+  }
+  // 이미지 출력 처리
+  if (isImage) {
+    const block = buildImageToolResult(stdout, toolUseID)
+    if (block) return block
+  }
+  let processedStdout = normalizedStdout
+    .replace(/^(\s*\n)+/, '')
+    .trimEnd()
+  // 대용량 출력: 디스크에 저장하고 미리보기만 모델에 전달
+  if (persistedOutputPath) {
+    const preview = generatePreview(processedStdout, PREVIEW_SIZE_BYTES)
+    processedStdout = buildLargeToolResultMessage({
+      filepath: persistedOutputPath,
+      originalSize: persistedOutputSize ?? 0,
+      preview: preview.preview,
+      hasMore: preview.hasMore,
+      isJson: false,
+    })
+  }
+  return {
+    tool_use_id: toolUseID,
+    type: 'tool_result',
+    content: [processedStdout, errorMessage, backgroundInfo].filter(Boolean).join('\n'),
+    is_error: interrupted,
+  }
+},</code></pre>
+    </figure>
+
+    <!-- 예시 6: ToolSearchTool — 지연 로딩과 tool_reference 반환 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/ToolSearchTool/ToolSearchTool.ts:304–471</code> — 지연 로딩 시스템의 핵심: 키워드 검색 후 tool_reference 블록으로 스키마 공개 (call 내부 select: 분기 및 mapToolResult 발췌; 중간 로깅·분기 생략)</figcaption>
+      <pre><code class="language-typescript">export const ToolSearchTool = buildTool({
+  name: TOOL_SEARCH_TOOL_NAME,
+  // 지연 로딩 활성화 시에만 노출
+  isEnabled() { return isToolSearchEnabledOptimistic() },
+
+  async call(input, { options: { tools }, getAppState }) {
+    const { query, max_results = 5 } = input
+    // shouldDefer: true 인 툴만 대상
+    const deferredTools = tools.filter(isDeferredTool)
+
+    // "select:ToolName" 형식 → 직접 선택
+    const selectMatch = query.match(/^select:(.+)$/i)
+    if (selectMatch) {
+      const requested = selectMatch[1]!.split(',').map(s =&gt; s.trim())
+      const found = requested
+        .map(name =&gt; findToolByName(deferredTools, name) ?? findToolByName(tools, name))
+        .filter(Boolean)
+        .map(t =&gt; t!.name)
+      return buildSearchResult(found, query, deferredTools.length)
+    }
+    // 키워드 검색 — 이름 파싱 + searchHint + 설명 텍스트 점수화
+    const matches = await searchToolsWithKeywords(query, deferredTools, tools, max_results)
+    return buildSearchResult(matches, query, deferredTools.length)
+  },
+
+  // tool_reference 블록: API가 이 이름으로 지연된 스키마를 인라인 전개
+  mapToolResultToToolResultBlockParam(content, toolUseID): ToolResultBlockParam {
+    if (content.matches.length === 0) {
+      return { type: 'tool_result', tool_use_id: toolUseID, content: 'No matching deferred tools found' }
+    }
+    return {
+      type: 'tool_result',
+      tool_use_id: toolUseID,
+      content: content.matches.map(name =&gt; ({
+        type: 'tool_reference' as const,
+        tool_name: name,
+      })),
+    } as unknown as ToolResultBlockParam
+  },
+} satisfies ToolDef&lt;InputSchema, Output&gt;)</code></pre>
+    </figure>
+
+    <!-- 예시 7: tools.ts 레지스트리 등록 구조 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools.ts:182–239</code> — getAllBaseTools(): 모든 툴의 단일 진실 원천 (피처 플래그 기반 조건부 포함 패턴; 중간 항목 일부 생략)</figcaption>
+      <pre><code class="language-typescript">export function getAllBaseTools(): Tools {
+  return [
+    AgentTool,
+    TaskOutputTool,
+    BashTool,
+    // 임베디드 검색 툴이 있으면 GlobTool/GrepTool 불필요
+    ...(hasEmbeddedSearchTools() ? [] : [GlobTool, GrepTool]),
+    FileReadTool,
+    FileEditTool,
+    FileWriteTool,
+    // … 생략
+    // ToolSearch 활성화 시에만 포함
+    ...(isToolSearchEnabledOptimistic() ? [ToolSearchTool] : []),
+  ].filter(Boolean)  // null/undefined 방어
+}
+
+// 빌트인 + MCP 툴을 합치고 알파벳 정렬로 프롬프트 캐시 안정화
+export function assembleToolPool(
+  permissionContext: ToolPermissionContext,
+  mcpTools: Tools,
+): Tools {
+  const builtInTools = getTools(permissionContext)
+  const allowedMcpTools = filterToolsByDenyRules(mcpTools, permissionContext)
+  const byName = (a: Tool, b: Tool) =&gt; a.name.localeCompare(b.name)
+  // uniqBy: 이름 충돌 시 빌트인 우선
+  return uniqBy(
+    [...builtInTools].sort(byName).concat(allowedMcpTools.sort(byName)),
+    'name',
+  )
+}</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. "직접 만든다면" 교훈 -->
+  <section id="diy">
+    <h2>"직접 만든다면" 교훈</h2>
+
+    <h3>최소 Tool 타입과 디스패처</h3>
+    <p>
+      핵심만 남긴 최소 구현을 생각해보면 툴 시스템의 본질이 드러난다.
+    </p>
+    <figure class="code-ex">
+      <figcaption>최소 Tool 타입 + 디스패처 의사코드 (실제 openclaude 코드 아님, 개념 설명용)</figcaption>
+      <pre><code class="language-typescript">// 1. 최소 Tool 계약
+type MinimalTool&lt;Input, Output&gt; = {
+  name: string
+  inputSchema: JSONSchema          // LLM에게 보내는 API 문서
+  call(input: Input): Promise&lt;Output&gt;
+  checkPermissions(input: Input): Promise&lt;'allow' | 'ask' | 'reject'&gt;
+  serialize(output: Output, id: string): ToolResultBlock
+}
+
+// 2. 디스패처 — LLM 응답에서 툴 콜을 받아 실행
+async function dispatch(
+  toolUseBlock: { name: string; input: unknown; id: string },
+  tools: MinimalTool&lt;unknown, unknown&gt;[],
+): Promise&lt;ToolResultBlock&gt; {
+  const tool = tools.find(t =&gt; t.name === toolUseBlock.name)
+  if (!tool) {
+    return errorBlock(toolUseBlock.id, `Unknown tool: ${toolUseBlock.name}`)
+  }
+
+  // 단계 1: 입력 검증 (Zod parse — LLM 출력은 항상 의심)
+  const parsed = tool.inputSchema.safeParse(toolUseBlock.input)
+  if (!parsed.success) {
+    return errorBlock(toolUseBlock.id, parsed.error.message)
+  }
+
+  // 단계 2: 권한 게이트 (사용자 의도 확인)
+  const permission = await tool.checkPermissions(parsed.data)
+  if (permission === 'reject') {
+    return errorBlock(toolUseBlock.id, 'Permission denied')
+  }
+  if (permission === 'ask') {
+    const approved = await askUser(tool.name, parsed.data)
+    if (!approved) return errorBlock(toolUseBlock.id, 'User rejected')
+  }
+
+  // 단계 3: 실행
+  const output = await tool.call(parsed.data)
+
+  // 단계 4: 직렬화 → Anthropic API 형식
+  return tool.serialize(output, toolUseBlock.id)
+}</code></pre>
+    </figure>
+
+    <h3>왜 스키마 검증을 LLM 밖에서 하나</h3>
+    <p>
+      LLM은 함수 시그니처를 지키는 코드 컴파일러가 아니다.
+      같은 오류 입력을 받으면 같은 잘못된 호출을 반복할 수 있고,
+      JSON 구문은 맞아도 의미가 틀린 인자를 생성할 수 있다.
+      반면 Zod 검증은 결정론적이고 부작용이 없으며 즉각적이다.
+    </p>
+    <div class="callout">
+      <strong>신뢰 경계 원칙:</strong> LLM 출력은 "신뢰하되 검증하라(trust but verify)"가 아니라
+      <strong>"항상 검증하라"</strong>다. 스키마 검증, 경로 이탈 검사, 명령어 패턴 매칭이
+      모두 이 원칙의 구현체다.
+    </div>
+
+    <h3>지연 로딩을 도입하는 시점</h3>
+    <p>
+      툴 스키마는 모두 시스템 프롬프트(또는 API <code>tools[]</code>)에 포함되어
+      <strong>모든 API 호출의 컨텍스트를 소비</strong>한다.
+      툴 10개 × 평균 200토큰 = 2,000 토큰이 항상 낭비된다.
+      이것이 ToolSearch 방식의 지연 로딩이 필요한 이유다.
+      단, 지연 로딩은 추가 왕복(LLM → ToolSearch → LLM)을 유발하므로
+      <em>자주 쓰이는 핵심 툴은 alwaysLoad, 드물게 쓰이는 툴은 shouldDefer</em>로 나누는
+      것이 실용적이다.
+    </p>
+    <p>
+      openclaude의 또 다른 설계 포인트: <strong>알파벳 정렬로 프롬프트 캐시를 안정화</strong>한다.
+      <code>assembleToolPool</code>이 빌트인과 MCP 툴을 각각 정렬 후 합치는 이유는,
+      MCP 서버 연결 순서가 달라져도 캐시 키가 바뀌지 않게 하기 위해서다.
+      LLM 비용에서 캐시 히트율은 직접적인 비용 절감으로 이어진다.
+    </p>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="02-agent-loop.html">← 이전: 에이전트 루프</a>
+  <a href="04-context-engineering.html">다음: 컨텍스트 엔지니어링 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
