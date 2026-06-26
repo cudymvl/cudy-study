@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>컨텍스트 엔지니어링 — openclaude 학습</title>
+  <!-- 이 파일은 저장소 루트에 위치. 경로는 루트 기준. -->
+  <link rel="stylesheet" href="assets/style.css">
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Mermaid.js -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-architecture.html">0·조감도</a>
+  <a href="01-one-turn.html">1·한 턴</a>
+  <a href="02-agent-loop.html">2·루프</a>
+  <a href="03-tool-system.html">3·툴</a>
+  <a href="04-context-engineering.html" class="active">4·컨텍스트</a>
+  <a href="05-multi-model.html">5·멀티모델</a>
+  <a href="06-subagents-orchestration.html">6·서브에이전트</a>
+  <a href="07-extensibility.html">7·확장성</a>
+  <a href="08-permissions.html">8·권한</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 4</span>
+    <h1>컨텍스트 엔지니어링</h1>
+    <p class="subtitle">유한한 컨텍스트 윈도우를 어떻게 관리하는가 — 토큰 추정, 임계 감지, auto-compact, context collapse, 세션 메모리 추출/주입</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      LLM은 한 번에 볼 수 있는 텍스트의 양이 정해져 있다. 이를 <strong>컨텍스트 윈도우(context window)</strong>라 한다.
+      Claude Sonnet 4 기준으로 약 200,000 토큰(≈150,000 영어 단어). 긴 세션에서는 이 한계에 반드시 부딪힌다.
+    </p>
+    <p>
+      에이전트 루프(Module 2)는 매 턴 대화 전체를 API에 전송한다. 코드 수정, 파일 읽기, 툴 결과가 쌓이면
+      수만 토큰이 순식간에 소비된다. 윈도우가 가득 차면 API는 <code>prompt_too_long</code> 오류를 내뱉고
+      세션은 멈춘다.
+    </p>
+    <p>
+      openclaude가 해결해야 하는 문제는 단순한 "자르기"가 아니다:
+    </p>
+    <ul>
+      <li><strong>무엇을 살리는가:</strong> 최근 요청, 중요한 파일 내용, 발생한 오류 — 이것들을 잃으면 에이전트가 엉뚱한 방향으로 간다.</li>
+      <li><strong>언제 자르는가:</strong> 너무 일찍 자르면 정보 손실, 너무 늦게 자르면 API 오류.</li>
+      <li><strong>자른 정보를 어떻게 보존하는가:</strong> 요약 vs. 외부 파일 vs. 접기(collapse).</li>
+    </ul>
+    <p>
+      이 모듈은 openclaude가 이 세 질문에 답하는 구체적인 메커니즘을 파헤친다.
+      <strong>무엇을 남기고 버리는가가 에이전트 품질을 결정한다.</strong>
+    </p>
+    <div class="callout">
+      <strong>Module 2와의 관계:</strong> Module 2는 루프가 "언제 compact을 트리거하는가"를 스쳐 지나갔다.
+      이 모듈은 compact 내부 — 토큰 추정부터 컨텍스트 재구성까지 — 를 완전히 해부한다.
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>컨텍스트 관리 전체 흐름</h2>
+    <p>매 API 호출 직전, openclaude는 다음 흐름으로 컨텍스트를 관리한다.</p>
+    <pre class="mermaid">
+flowchart TD
+    A[매 턴 시작] --> B[토큰 추정\ntokenCountWithEstimation]
+    B --> C{임계 판정}
+
+    C -->|Context Collapse 활성\n&amp; 95% 이상| D[Context Collapse\nspawnCtxAgent 호출]
+    C -->|Auto-compact 활성\n임계 초과| E{세션 메모리\n먼저 시도}
+    C -->|정상 범위| K[API 호출 진행]
+
+    D --> D1[ctx-agent: 대화 스팬 요약]
+    D1 --> D2[placeholder 메시지로\n원본 스팬 교체]
+    D2 --> K
+
+    E -->|세션 메모리 성공| F[SessionMemory 파일로\n컨텍스트 대체]
+    E -->|세션 메모리 없음| G[compactConversation\n요약 생성 호출]
+
+    F --> K
+    G --> G1[forked agent:\n요약 프롬프트 전송]
+    G1 --> G2[summary 문자열 수신]
+    G2 --> H[boundaryMarker + summaryMessages\n+ attachments 재구성]
+    H --> K
+
+    K --> L[API 응답]
+    L --> M{턴 종료 후\nmemory 추출}
+    M -->|extractMemories 활성| N[forked agent:\n새 메모리 파일 기록]
+    M -->|SessionMemory 활성| O[sessionMemory\n요약 파일 갱신]
+    M --> P[다음 턴]
+    N --> P
+    O --> P
+    </pre>
+
+    <p>핵심은 <strong>세 겹의 방어선</strong>이다:</p>
+    <ol>
+      <li><strong>Context Collapse (실험적)</strong> — 95% 도달 시 대화 스팬을 인라인 요약으로 "접는다". 가장 세밀하게 제어 가능.</li>
+      <li><strong>Auto-compact</strong> — 임계(유효 윈도우 - 13,000 토큰) 초과 시 전체 대화를 요약 + 재구성.</li>
+      <li><strong>세션 메모리(Session Memory)</strong> — 백그라운드에서 점진적 메모 파일을 유지해 compact 시 즉시 사용.</li>
+    </ol>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>① 토큰 추정 방식</h3>
+    <p>
+      실제 토큰 카운트를 얻으려면 API를 호출해야 한다 — 하지만 매 턴 API를 추가로 호출하면 지연 시간이 크게 늘어난다.
+      openclaude는 두 가지 방식을 레이어로 쌓는다:
+    </p>
+    <table>
+      <thead>
+        <tr><th>방식</th><th>함수</th><th>정확도</th><th>비용</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API 기반 카운트</td>
+          <td><code>countMessagesTokensWithAPI</code></td>
+          <td>정확</td>
+          <td>API 호출 필요</td>
+        </tr>
+        <tr>
+          <td>Haiku 폴백</td>
+          <td><code>countTokensViaHaikuFallback</code></td>
+          <td>정확 (실제 응답 usage 활용)</td>
+          <td>소형 모델 호출</td>
+        </tr>
+        <tr>
+          <td>러프 추정</td>
+          <td><code>roughTokenCountEstimation</code></td>
+          <td>근사 (bytes / 4)</td>
+          <td>즉시, 무료</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      임계 판정 같은 빈번한 체크에는 <code>roughTokenCountEstimation</code>을 쓰고,
+      실제 compact 실행 전후 정확한 수치는 <code>countTokensViaHaikuFallback</code>으로 보정한다.
+      JSON 파일은 단일 문자 토큰이 많아 bytes/token 비율이 낮으므로, 파일 타입별 보정도 제공한다
+      (<code>bytesPerTokenForFileType</code>: JSON은 2, 나머지는 4).
+    </p>
+    <p>
+      이미지·PDF 블록에는 고정값 2,000 토큰을 할당한다. 실제 API 비용(픽셀×픽셀/750)을
+      정확히 계산하면 base64 디코딩이 필요해 오히려 오버헤드가 커지기 때문이다.
+    </p>
+
+    <h3>② Auto-compact 트리거와 Cooldown</h3>
+    <p>
+      매 에이전트 루프 턴 직전 <code>shouldAutoCompact()</code>가 호출된다.
+      트리거 조건은 두 단계다:
+    </p>
+    <ol>
+      <li>
+        <strong>유효 윈도우 계산:</strong>
+        <code>getEffectiveContextWindowSize()</code>는 모델 컨텍스트 윈도우에서
+        요약 출력 예약 토큰(최대 20,000)을 뺀다.
+        여기서 또 13,000 토큰 버퍼를 뺀 값이 <strong>auto-compact 임계값</strong>이다.
+      </li>
+      <li>
+        <strong>임계 초과 여부:</strong> <code>tokenCountWithEstimation(messages)</code> 결과가
+        임계값 이상이면 compact 실행.
+      </li>
+    </ol>
+    <p>
+      Compact 자체가 실패하면 무한 재시도를 막기 위해 <strong>회로 차단기(circuit breaker)</strong>가 작동한다.
+      연속 3회 실패 시 5분(기본값) 쿨다운을 설정하고, 그동안 auto-compact를 스킵한다.
+      3회 연속 실패 후 5분 대기는 하루 전체 플릿에서 250,000건의 낭비 API 호출을 막기 위해 도입됐다는
+      주석이 소스에 남아 있다.
+    </p>
+    <p>
+      Context Collapse가 활성화된 세션에서는 Collapse가 실제 감소를 적용한 뒤에야
+      <code>shouldAutoCompact()</code>가 false를 반환한다 —
+      Collapse와 compact가 동시에 경쟁하지 않도록 설계됐다.
+    </p>
+
+    <h3>③ 요약(Compact) 전략</h3>
+    <p>
+      Auto-compact가 트리거되면 <code>compactConversation()</code>이 실행된다.
+      핵심 흐름:
+    </p>
+    <ol>
+      <li>
+        <strong>세션 메모리 먼저 시도:</strong> 세션 메모리 파일이 있으면
+        <code>trySessionMemoryCompaction</code>을 먼저 실행해 빠른 교체를 시도한다.
+      </li>
+      <li>
+        <strong>요약 생성:</strong> forked agent에 대화 전체 + 구조화된 프롬프트를 전달,
+        9개 섹션(요청 의도, 기술 개념, 파일/코드, 오류/수정 등)의 <code>&lt;summary&gt;</code> 블록을 요청한다.
+      </li>
+      <li>
+        <strong>재구성:</strong> 요약이 도착하면 기존 메시지를 전부 버리고
+        <code>boundaryMarker + summaryMessages + attachments + hookResults</code>로 대화를 재구성한다.
+      </li>
+      <li>
+        <strong>파일 재주입:</strong> compact 전 읽었던 파일 최대 5개(<code>POST_COMPACT_MAX_FILES_TO_RESTORE</code>)를
+        첨부 메시지로 복원한다. 스킬, 플랜, 도구 목록도 재주입된다.
+      </li>
+    </ol>
+    <p>
+      Compact 요청 자체가 <code>prompt_too_long</code>을 받는 엣지 케이스에도 대비한다:
+      가장 오래된 API 라운드 그룹을 하나씩 잘라내 최대 3회 재시도한다(<code>truncateHeadForPTLRetry</code>).
+    </p>
+
+    <h3>④ Context Collapse — 인라인 접기</h3>
+    <p>
+      Context Collapse는 compact보다 세밀한 도구다. 전체 대화를 버리는 대신,
+      <strong>특정 스팬(span)만 요약으로 "접는다"</strong>.
+    </p>
+    <p>
+      유효 윈도우의 95%에 도달하면 <code>spawnCtxAgent</code>가 호출된다.
+      <code>selectCollapseSpan()</code>으로 접을 범위를 선택한 뒤,
+      <code>marble_origami</code>라는 query source로 forked agent를 띄워 해당 스팬의 요약을 얻는다.
+      요약은 <code>StagedSpan</code>으로 큐에 쌓이고, 다음 턴에 <code>drainStaged()</code>가
+      원본 메시지들을 단일 placeholder 메시지로 교체한다.
+    </p>
+    <p>
+      이 구조 덕분에 접힌 내용은 요약 텍스트로 남고, 원본 메시지는 메모리에서 제거되어
+      토큰을 되돌려준다. 세션을 재개하면 persist.ts가 커밋 로그를 복원해 접힌 상태를 유지한다.
+    </p>
+
+    <h3>⑤ 세션 메모리 추출과 주입</h3>
+    <p>
+      세션 메모리는 두 개의 독립 시스템이 존재한다:
+    </p>
+    <ul>
+      <li>
+        <strong>SessionMemory</strong> (<code>src/services/SessionMemory/</code>):
+        대화 중 주기적으로 백그라운드에서 마크다운 파일을 갱신한다.
+        compact 시 이 파일을 즉시 활용할 수 있으면 forked agent 요약 없이 빠르게 컨텍스트를 교체한다.
+        트리거 조건: 토큰 10,000 이상 + 5,000 토큰 성장 + 툴 호출 3회 이상.
+      </li>
+      <li>
+        <strong>extractMemories</strong> (<code>src/services/extractMemories/</code>):
+        각 쿼리 루프가 끝날 때 fire-and-forget으로 forked agent를 실행해
+        <code>~/.claude/projects/…/memory/</code>에 장기 기억 파일을 쓴다.
+        다음 세션에서 이 파일이 시스템 프롬프트에 주입되어 이전 작업 맥락을 이어간다.
+      </li>
+    </ul>
+    <p>
+      두 시스템 모두 <code>runForkedAgent</code>를 사용한다 — 부모 대화의 프롬프트 캐시를 공유해
+      추가 API 비용을 최소화하면서도 부모 상태를 오염시키지 않는다.
+    </p>
+
+    <h3>⑥ History 직렬화</h3>
+    <p>
+      openclaude는 대화 히스토리를 JSONL 파일에 직렬화해 세션 재개를 지원한다.
+      각 메시지는 UUID, 타임스탬프, 타입, content 블록을 포함하며,
+      compact boundary 마커와 collapse 커밋 로그가 함께 기록된다.
+      재개 시 이 로그를 재생해 collapse/compact 상태를 메모리에 복원한다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 코드 예시 -->
+  <section id="code">
+    <h2>실제 코드 예시</h2>
+
+    <h3>예시 1 — 러프 토큰 추정: 바이트 나누기와 파일 타입 보정</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/tokenEstimation.ts:273-294</code> — 기본 러프 추정 함수와 JSON 파일 타입 보정</figcaption>
+      <pre><code class="language-typescript">export function roughTokenCountEstimation(
+  content: string,
+  bytesPerToken: number = 4,
+): number {
+  return Math.round(content.length / bytesPerToken)
+}
+
+/**
+ * Returns an estimated bytes-per-token ratio for a given file extension.
+ * Dense JSON has many single-character tokens (`{`, `}`, `:`, `,`, `"`)
+ * which makes the real ratio closer to 2 rather than the default 4.
+ */
+export function bytesPerTokenForFileType(fileExtension: string): number {
+  switch (fileExtension) {
+    case 'json':
+    case 'jsonl':
+    case 'jsonc':
+      return 2
+    default:
+      return 4
+  }
+}</code></pre>
+    </figure>
+    <p>
+      핵심은 단순하다: <em>글자 수 ÷ bytesPerToken</em>. 기본값 4는 영어 산문에 대한 경험적 근사다.
+      JSON은 중괄호, 따옴표 같은 단일 문자 토큰이 밀집되어 있어 2를 쓴다.
+      이미지·PDF 블록에는 이 함수 대신 고정값 2,000을 반환한다 (같은 파일, 620–632행).
+    </p>
+
+    <h3>예시 2 — Auto-compact 임계값 계산과 경고 상태 판정</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/compact/autoCompact.ts:35-56</code> — 유효 윈도우 크기 계산</figcaption>
+      <pre><code class="language-typescript">// Reserve this many tokens for output during compaction
+// Based on p99.99 of compact summary output being 17,387 tokens.
+const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
+
+// Returns the context window size minus the max output tokens for the model
+export function getEffectiveContextWindowSize(model: string): number {
+  const reservedTokensForSummary = Math.min(
+    getMaxOutputTokensForModel(model),
+    MAX_OUTPUT_TOKENS_FOR_SUMMARY,
+  )
+  let contextWindow = getContextWindowForModel(model, getSdkBetas())
+
+  const autoCompactWindow = process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW
+  if (autoCompactWindow) {
+    const parsed = parseInt(autoCompactWindow, 10)
+    if (!isNaN(parsed) && parsed > 0) {
+      contextWindow = Math.min(contextWindow, parsed)
+    }
+  }
+
+  // Floor: effective context must be at least the summary reservation plus a
+  // usable buffer. If it goes lower, the auto-compact threshold becomes
+  // negative and fires on every message (issue #635).
+  const autocompactBuffer = 13_000 // must match AUTOCOMPACT_BUFFER_TOKENS
+  const effectiveContext = contextWindow - reservedTokensForSummary
+  return Math.max(effectiveContext, reservedTokensForSummary + autocompactBuffer)
+}</code></pre>
+    </figure>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/compact/autoCompact.ts:77-82</code> — 주요 토큰 버퍼 상수</figcaption>
+      <pre><code class="language-typescript">export const AUTOCOMPACT_BUFFER_TOKENS = 13_000
+export const WARNING_THRESHOLD_BUFFER_TOKENS = 20_000
+export const ERROR_THRESHOLD_BUFFER_TOKENS = 20_000
+export const MANUAL_COMPACT_BUFFER_TOKENS = 3_000
+
+export const AUTOCOMPACT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000</code></pre>
+    </figure>
+    <p>
+      실제 임계값 = <code>getEffectiveContextWindowSize(model) - 13_000</code>.
+      예를 들어 200k 윈도우 모델이라면: 200,000 − 20,000(요약 예약) = 180,000, 여기서 13,000을 더 빼
+      <strong>167,000 토큰</strong>이 compact 트리거 시점이다.
+      p99.99 요약 출력이 17,387 토큰이라는 실측 데이터로 20,000 예약값이 결정됐다는 점이 인상적이다.
+    </p>
+
+    <h3>예시 3 — shouldAutoCompact: 회로 차단기와 Context Collapse 우선순위</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/compact/autoCompact.ts:263-356</code> — compact 실행 여부 판정 (핵심 가드 로직)</figcaption>
+      <pre><code class="language-typescript">export async function shouldAutoCompact(
+  messages: Message[],
+  model: string,
+  querySource?: QuerySource,
+  snipTokensFreed = 0,
+  skipTokenCheck = false,
+): Promise<boolean> {
+  // Recursion guards. session_memory and compact are forked agents that
+  // would deadlock.
+  if (querySource === 'session_memory' || querySource === 'compact') {
+    return false
+  }
+  // …(marble_origami ctx-agent 가드 생략)…
+
+  if (!isAutoCompactEnabled()) {
+    return false
+  }
+
+  // Context-collapse mode: same suppression. Collapse IS the context
+  // management system when it's on — the 90% commit / 95% blocking-spawn
+  // flow owns the headroom problem.
+  if (feature('CONTEXT_COLLAPSE')) {
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const { hasActiveReduction, isMainThreadSource } =
+      require('../contextCollapse/index.js') as typeof import('../contextCollapse/index.js')
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    if (isMainThreadSource(querySource) && hasActiveReduction()) {
+      return false
+    }
+  }
+
+  if (skipTokenCheck) {
+    return true
+  }
+
+  const tokenCount = tokenCountWithEstimation(messages) - snipTokensFreed
+  const threshold = getAutoCompactThreshold(model)
+  // …(로그 생략)…
+
+  const { isAboveAutoCompactThreshold } = calculateTokenWarningState(
+    tokenCount,
+    model,
+  )
+
+  return isAboveAutoCompactThreshold
+}</code></pre>
+    </figure>
+    <p>
+      세 개의 안전 가드가 연달아 등장한다: ① 재귀 방지(session_memory, compact는 forked agent이므로 deadlock 위험),
+      ② 사용자 설정 확인, ③ Context Collapse 활성 시 suppression.
+      Context Collapse와 auto-compact가 동시에 경쟁하면 Collapse가 방금 저장한 세밀한 스팬 요약이
+      auto-compact에 의해 날아가는 문제가 생기기 때문이다.
+    </p>
+
+    <h3>예시 4 — Context Collapse: 스팬 커밋 로직</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/contextCollapse/index.ts:271-332</code> — drainStaged: staged span을 placeholder로 교체</figcaption>
+      <pre><code class="language-typescript">function drainStaged(
+  messages: Message[],
+  persist: boolean,
+): Message[] {
+  // …(stale span 정리 생략)…
+
+  const processed: StagedSpan[] = []
+
+  for (const span of stagedQueue.sort((a, b) => a.stagedAt - b.stagedAt)) {
+    const firstIdx = messages.findIndex(m => m.uuid === span.startUuid)
+    const lastIdx = findLastIndex(messages, m => m.uuid === span.endUuid)
+
+    if (firstIdx === -1 || lastIdx === -1 || firstIdx > lastIdx) continue
+
+    const archivedCount = lastIdx - firstIdx + 1
+    const collapseId = deriveCollapseId(span.startUuid)
+    const summaryUuid = randomUUID()
+    const summaryContent = buildCollapsePlaceholder(collapseId, span.summary)
+
+    const placeholder: Message = {
+      type: 'system',
+      subtype: 'informational',
+      content: summaryContent,
+      uuid: summaryUuid,
+      timestamp: new Date().toISOString(),
+      isMeta: true,
+      // Survives normalizeMessagesForAPI as a user message so the summary
+      // reaches the model after the archived span is removed.
+      isCollapseSummary: true,
+    } as Message
+
+    // …(commitLog 갱신 생략)…
+
+    messages = [
+      ...messages.slice(0, firstIdx),
+      placeholder,
+      ...messages.slice(lastIdx + 1),
+    ]
+
+    processed.push(span)
+  }
+
+  if (processed.length > 0) {
+    stagedQueue = stagedQueue.filter(s => !processed.includes(s))
+
+    if (persist) {
+      void persistCommits(processed.length)
+        .then(() => persistSnapshot())
+        .catch(() => {})
+    }
+    // …(notifyListeners 생략)…
+  }
+
+  return messages
+}</code></pre>
+    </figure>
+    <p>
+      핵심은 <code>messages.slice(0, firstIdx) + [placeholder] + messages.slice(lastIdx + 1)</code>.
+      원본 N개 메시지가 단 1개의 placeholder로 교체된다.
+      <code>isCollapseSummary: true</code> 플래그 덕분에 <code>normalizeMessagesForAPI</code>가
+      이 메시지를 user 역할로 변환해 API에 전달한다.
+    </p>
+
+    <h3>예시 5 — 메모리 추출: forked agent 실행과 커서 전진</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/extractMemories/extractMemories.ts:415-436</code> — runForkedAgent로 메모리 파일 기록</figcaption>
+      <pre><code class="language-typescript">      const result = await runForkedAgent({
+        promptMessages: [createUserMessage({ content: userPrompt })],
+        cacheSafeParams,
+        canUseTool,
+        querySource: 'extract_memories',
+        forkLabel: 'extract_memories',
+        // The extractMemories subagent does not need to record to transcript.
+        // Doing so can create race conditions with the main thread.
+        skipTranscript: true,
+        // Well-behaved extractions complete in 2-4 turns (read → write).
+        // A hard cap prevents verification rabbit-holes from burning turns.
+        maxTurns: 5,
+      })
+
+      // Advance the cursor only after a successful run. If the agent errors
+      // out (caught below), the cursor stays put so those messages are
+      // reconsidered on the next extraction.
+      const lastMessage = messages.at(-1)
+      if (lastMessage?.uuid) {
+        lastMemoryMessageUuid = lastMessage.uuid
+      }</code></pre>
+    </figure>
+    <p>
+      <code>lastMemoryMessageUuid</code>는 커서 역할을 한다. 성공한 경우에만 전진시키므로,
+      실패 시 다음 턴에서 같은 메시지 범위를 다시 처리한다. <code>skipTranscript: true</code>는
+      메모리 추출 에이전트가 트랜스크립트에 흔적을 남기지 않게 해 메인 히스토리를 깔끔하게 유지한다.
+    </p>
+
+    <h3>예시 6 — SessionMemory: 업데이트 임계 판정</h3>
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/SessionMemory/sessionMemory.ts:134-180</code> — shouldExtractMemory: 복합 임계 조건</figcaption>
+      <pre><code class="language-typescript">export function shouldExtractMemory(messages: Message[]): boolean {
+  // Check if we've met the initialization threshold
+  // Uses total context window tokens (same as autocompact) for consistent behavior
+  const currentTokenCount = tokenCountWithEstimation(messages)
+  if (!isSessionMemoryInitialized()) {
+    if (!hasMetInitializationThreshold(currentTokenCount)) {
+      return false
+    }
+    markSessionMemoryInitialized()
+  }
+
+  // Check if we've met the minimum tokens between updates threshold
+  const hasMetTokenThreshold = hasMetUpdateThreshold(currentTokenCount)
+
+  // Check if we've met the tool calls threshold
+  const toolCallsSinceLastUpdate = countToolCallsSince(
+    messages,
+    lastMemoryMessageUuid,
+  )
+  const hasMetToolCallThreshold =
+    toolCallsSinceLastUpdate >= getToolCallsBetweenUpdates()
+
+  // Check if the last assistant turn has no tool calls (safe to extract)
+  const hasToolCallsInLastTurn = hasToolCallsInLastAssistantTurn(messages)
+
+  // Trigger extraction when:
+  // 1. Both thresholds are met (tokens AND tool calls), OR
+  // 2. No tool calls in last turn AND token threshold is met
+  const shouldExtract =
+    (hasMetTokenThreshold && hasMetToolCallThreshold) ||
+    (hasMetTokenThreshold && !hasToolCallsInLastTurn)
+
+  if (shouldExtract) {
+    const lastMessage = messages[messages.length - 1]
+    if (lastMessage?.uuid) {
+      lastMemoryMessageUuid = lastMessage.uuid
+    }
+    return true
+  }
+
+  return false
+}</code></pre>
+    </figure>
+    <p>
+      세 조건의 AND/OR 조합이 눈여겨볼 부분이다:
+      토큰 임계는 항상 필수이고, 여기에 "툴 호출 3회 이상" 또는 "마지막 턴에 툴 호출 없음(=자연스러운 대화 break)"
+      중 하나가 추가로 요구된다. 토큰만 체크하면 매 턴 추출이 될 수 있어 비용이 폭증하기 때문이다.
+    </p>
+    <p>
+      기본값: <code>minimumMessageTokensToInit = 10,000</code>, <code>minimumTokensBetweenUpdate = 5,000</code>,
+      <code>toolCallsBetweenUpdates = 3</code> (sessionMemoryUtils.ts:32–36).
+    </p>
+  </section>
+
+  <!-- 5. 직접 만든다면 -->
+  <section id="diy">
+    <h2>"직접 만든다면" 교훈</h2>
+
+    <h3>슬라이딩 윈도우 vs. 요약 vs. 외부 메모리</h3>
+    <p>컨텍스트 관리 전략의 세 가지 주요 접근법은 서로 다른 트레이드오프를 가진다:</p>
+    <table>
+      <thead>
+        <tr><th>전략</th><th>장점</th><th>단점</th><th>openclaude에서</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>슬라이딩 윈도우 (오래된 메시지 삭제)</td>
+          <td>구현 단순, 즉각적</td>
+          <td>초기 요청·결정 맥락 유실</td>
+          <td>Context Collapse의 보조 역할</td>
+        </tr>
+        <tr>
+          <td>요약 (LLM이 직접 요약)</td>
+          <td>맥락 보존 우수</td>
+          <td>추가 API 호출, 요약 지연</td>
+          <td>Auto-compact의 핵심 경로</td>
+        </tr>
+        <tr>
+          <td>외부 메모리 파일</td>
+          <td>세션 간 영속, 선택적 로딩</td>
+          <td>어떤 메모리를 언제 로드할지 판단 필요</td>
+          <td>extractMemories + MEMORY.md</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      openclaude는 세 전략을 <strong>모두 사용</strong>하며 레이어를 쌓는다.
+      실용적 교훈: 단일 전략으로는 충분하지 않다. 각 전략이 서로 다른 시나리오에서 다른 계층을 커버한다.
+    </p>
+
+    <h3>토큰 버짓 관리 의사코드</h3>
+    <p>
+      openclaude 방식을 단순화하면 다음과 같다. 실제로는 각 단계에 훨씬 많은 안전장치가 있지만
+      뼈대는 이것이다:
+    </p>
+    <figure class="code-ex">
+      <figcaption><code class="src">의사코드 — 토큰 버짓 관리 흐름</code></figcaption>
+      <pre><code class="language-typescript">// 매 턴마다 실행
+async function manageContext(messages: Message[], model: string): Promise<Message[]> {
+  // 1. 빠른 러프 추정 (API 호출 없음)
+  const roughTokens = roughEstimate(messages)  // bytes / 4
+
+  // 2. 임계값 계산
+  const effectiveWindow = modelContextWindow(model) - SUMMARY_RESERVE  // 20k
+  const compactThreshold  = effectiveWindow - BUFFER          // 13k
+  const collapseThreshold = effectiveWindow * 0.95            // 95%
+
+  // 3. 계층적 대응
+  if (roughTokens >= collapseThreshold && collapseEnabled) {
+    // 가장 "저렴한" 방어선: 스팬만 접기
+    messages = await collapseOldestSpan(messages)
+  }
+
+  if (roughTokens >= compactThreshold) {
+    // 세션 메모리가 있으면 빠른 교체
+    const smResult = await trySessionMemorySwap(messages)
+    if (smResult) return smResult.messages
+
+    // 없으면 LLM 요약 생성 (forked agent)
+    messages = await generateSummaryAndRebuild(messages)
+  }
+
+  return messages
+}
+
+// 턴 종료 후 (fire-and-forget)
+async function postTurnMemoryHooks(messages: Message[]): Promise<void> {
+  // 단기 세션 메모리 갱신
+  if (shouldUpdateSessionMemory(messages)) {
+    void updateSessionMemoryFile(messages)
+  }
+  // 장기 메모리 추출
+  if (shouldExtractLongTermMemory(messages)) {
+    void extractToMemoryFiles(messages)  // ~/.claude/projects/.../memory/
+  }
+}</code></pre>
+    </figure>
+
+    <h3>주요 설계 교훈</h3>
+    <div class="callout">
+      <strong>1. 추정 비용을 최소화하라</strong><br>
+      토큰 카운트를 매 턴 API로 정확히 구하면 지연이 생긴다.
+      bytes/4 같은 러프 추정으로 임계 판정을 하고, 실제 compact 실행 전에만 정확한 수치를 쓴다.
+    </div>
+    <div class="callout">
+      <strong>2. 회로 차단기는 필수다</strong><br>
+      compact 자체가 실패할 수 있다(API 오류, 컨텍스트 자체가 너무 큰 경우).
+      무한 재시도는 하루에 수십만 건의 낭비 호출을 만든다. 3회 실패 후 5분 쿨다운이 실측 데이터로 도출됐다.
+    </div>
+    <div class="callout">
+      <strong>3. 가드 순서가 곧 정책이다</strong><br>
+      <code>shouldAutoCompact</code>에서 재귀 방지 → 사용자 설정 → Context Collapse 순으로 확인하는 것처럼,
+      여러 시스템이 공존할 때 "누가 컨텍스트를 소유하는가"를 명확히 하는 우선순위 규칙이 필요하다.
+      openclaude는 이를 <code>querySource</code> 문자열로 추적한다.
+    </div>
+    <div class="callout">
+      <strong>4. 세션 간 영속 메모리를 처음부터 설계하라</strong><br>
+      "대화가 길어지면 나중에 추가하자"는 생각은 잘못됐다.
+      <code>extractMemories</code>가 보여주듯, 메모리 파일 구조·경로·권한은 초기 설계에 포함돼야 한다.
+      사후 추가하면 기존 대화에서 추출할 방법이 없다.
+    </div>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="03-tool-system.html">← 이전: 툴 시스템</a>
+  <a href="05-multi-model.html">다음: 멀티모델 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
