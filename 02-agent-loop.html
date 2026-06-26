@@ -154,6 +154,10 @@ flowchart TD
     style NEXT_ITER fill:#2a2a4a,color:#fff
     </pre>
 
+    <div class="callout">
+      <strong>플로우차트 읽는 법:</strong> <code>ABORT_STREAM</code> 노드는 <code>for await</code> 스트림 루프가 <em>완전히 끝난 뒤</em> 중단 여부를 확인하는 지점이다(이터레이션 중간이 아님). 또한 <code>StreamingToolExecutor</code>는 스트림 수신 중에도 이미 도착한 tool_use 블록을 즉시 실행하기 시작하며, 중단 경로에서는 <code>getRemainingResults()</code>로 미완료 툴 결과를 드레인한다. 플로우차트의 단일 <code>ABORT_STREAM</code> 노드는 이 동시성을 가독성을 위해 압축한 것이다.
+    </div>
+
     <p>
       루프의 핵심 분기점은 두 곳이다.
     </p>
@@ -179,7 +183,7 @@ flowchart TD
       <li><strong>stream_event</strong>: <code>message_start</code>에서 usage 리셋, <code>message_delta</code>에서 <code>stop_reason</code> 포착, <code>message_stop</code>에서 누적 usage 집계.</li>
     </ul>
     <div class="callout">
-      <strong>중요:</strong> <code>stop_reason</code>은 <code>message_delta</code>에서만 온다. 스트리밍 방식에서 assistant 메시지가 생성될 때는 아직 <code>stop_reason === null</code>이고, 이후 <code>message_delta</code> 이벤트가 실제 값을 채운다. <code>QueryEngine</code>이 <code>lastStopReason</code>을 별도 변수로 추적하는 이유다.
+      <strong>중요:</strong> <code>stop_reason</code>은 <code>message_delta</code>에서만 온다. 스트리밍 방식에서 assistant 메시지가 생성될 때는 아직 <code>stop_reason === null</code>이고, 이후 <code>message_delta</code> 이벤트가 실제 값을 채운다. <code>queryLoop()</code>가 추적하는 <code>lastStopReason</code> 클로저 변수가 이 값을 저장해 루프 종료 판정에 사용하는 이유다.
     </div>
 
     <h3>② 툴콜 누적과 실행</h3>
@@ -192,7 +196,7 @@ flowchart TD
       모델이 스트리밍 중일 때도 이미 받은 툴은 병렬로 돌릴 수 있다.
     </p>
 
-    <h3>③ 종료 조건: 세 가지 경로</h3>
+    <h3>③ 종료 조건: 주요 종료 경로</h3>
 
     <table>
       <thead>
@@ -385,20 +389,35 @@ return { reason: 'completed' }    // nudge 불필요 → 자연 종료</code></p
 
     <!-- 예시 5: analyzeContinuationIntent — 완료 마커 vs 지속 신호 -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/utils/continuation.ts:124–214</code> — 텍스트에서 continuation intent 분석</figcaption>
+      <figcaption><code class="src">src/utils/continuation.ts:124–215</code> — 텍스트에서 continuation intent 분석</figcaption>
       <pre><code class="language-typescript">export function analyzeContinuationIntent(text: string): ContinuationResult {
   const lastText = text.trim()
   if (lastText.length === 0) return { shouldNudge: false }
 
+  const lowerText = lastText.toLowerCase()
+
   // 1. 구조적 잘림 신호 (가장 강력 — completion marker를 무시)
+
+  // 마크다운 코드 블록이 열려 있으면 잘린 것
   const hasUnclosedCodeBlock = (lastText.match(/```/g) || []).length % 2 !== 0
+
+  // 괄호/대괄호/중괄호의 열림 수 > 닫힘 수이면 잘린 것
+  const unclosedPairs = [['(', ')'], ['[', ']'], ['{', '}']]
+  const hasUnclosedPair = unclosedPairs.some(([open, close]) => {
+    const openCount  = (lastText.match(new RegExp('\\' + open,  'g')) || []).length
+    const closeCount = (lastText.match(new RegExp('\\' + close, 'g')) || []).length
+    return openCount > closeCount
+  })
+
+  // 후행 접속사·미완 문법 구조 (UNFINISHED_SENTIMENT_SIGNALS)
   const hasUnfinishedSuffix = UNFINISHED_SENTIMENT_SIGNALS.some(re => re.test(lastText))
-  if (hasUnclosedCodeBlock || hasUnfinishedSuffix) {
+
+  if (hasUnclosedCodeBlock || hasUnclosedPair || hasUnfinishedSuffix) {
     return { shouldNudge: true, reason: 'possible_truncation' }
   }
 
   // 2. 마지막 120자에서 action-verb 패턴 탐지 (비-Claude 모델 편향 완화를 위해 윈도우 한정)
-  const lateText = lastText.toLowerCase().slice(-120)
+  const lateText = lowerText.slice(-120)
   const hasLateContinuationSignal = CONTINUATION_SIGNALS.some(re => {
     const match = lateText.match(re)
     if (!match) return false
@@ -408,11 +427,18 @@ return { reason: 'completed' }    // nudge 불필요 → 자연 종료</code></p
     return strongAction || !hasLaterCompletion   // "done" 뒤에 "let me" → still nudge
   })
 
-  // 3. 완료 마커 최종 가드 — "done"/"finished" 등이 있고 continuation signal 없으면 종료
-  if (COMPLETION_MARKERS.test(lastText.toLowerCase()) && !hasLateContinuationSignal) {
+  // …(hasLateContinuationSignal 분기 — terminal punctuation / strongIntent / endsWithColon 등 생략)
+
+  // 3. 완료 마커 최종 가드 (세 조건 모두 충족해야 조기 종료)
+  // "done"/"finished" 등이 있고, late window에도 전체 텍스트에도 continuation signal이 없을 때만 종료
+  if (COMPLETION_MARKERS.test(lowerText) && !hasLateContinuationSignal &&
+      !CONTINUATION_SIGNALS.some(re => re.test(lowerText))) {
     return { shouldNudge: false }
   }
-  // ...
+
+  // …(global fallback — 미종결 문장 대상 생략)
+
+  return { shouldNudge: false }
 }</code></pre>
     </figure>
 
