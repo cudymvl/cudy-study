@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>멀티모델 추상화 — openclaude 학습</title>
+  <!-- 이 파일은 저장소 루트에 위치. 경로는 루트 기준. -->
+  <link rel="stylesheet" href="assets/style.css">
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Mermaid.js -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-architecture.html">0·조감도</a>
+  <a href="01-one-turn.html">1·한 턴</a>
+  <a href="02-agent-loop.html">2·루프</a>
+  <a href="03-tool-system.html">3·툴</a>
+  <a href="04-context-engineering.html">4·컨텍스트</a>
+  <a href="05-multi-model.html" class="active">5·멀티모델</a>
+  <a href="06-subagents-orchestration.html">6·서브에이전트</a>
+  <a href="07-extensibility.html">7·확장성</a>
+  <a href="08-permissions.html">8·권한</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 5</span>
+    <h1>멀티모델 추상화</h1>
+    <p class="subtitle">하나의 에이전트 루프로 200+ 모델 지원 — 프로바이더 차이를 흡수하는 통합 레지스트리, 포트/어댑터 설계, XML 툴콜 복구 shim</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      openclaude의 에이전트 루프(Module 2)는 LLM을 호출할 때 항상 같은 코드 경로를 밟는다.
+      그러나 실제로는 OpenAI의 Chat Completions API, Anthropic의 Messages API, Google의 Gemini API,
+      Ollama 같은 로컬 런타임 등 HTTP 규약도, 툴콜 포맷도, 인증 방식도 모두 다른 서비스들을 대상으로 한다.
+    </p>
+    <p>
+      이 문제를 "그냥 if/else로 분기한다"고 생각하면 순식간에 수백 줄의 스파게티가 된다.
+      모델 하나 추가할 때마다 루프 내부를 건드려야 하고, 새 프로바이더가 생기면 모든 분기를 다시 검토해야 한다.
+    </p>
+    <p>
+      openclaude가 택한 전략은 <strong>인테그레이션 추상화 계층(integration abstraction layer)</strong>이다.
+    </p>
+    <ul>
+      <li><strong>디스크립터(descriptor):</strong> 각 프로바이더·게이트웨이·모델의 특성을 선언적 객체로 표현한다. 코드가 아닌 데이터다.</li>
+      <li><strong>레지스트리(registry):</strong> 모든 디스크립터를 Map에 보관하고 지연 로딩(lazy loading)으로 시작 비용을 줄인다.</li>
+      <li><strong>어댑터(adapter/shim):</strong> 각 TransportKind마다 실제 HTTP 변환 로직을 담는다. 루프는 어댑터만 호출한다.</li>
+      <li><strong>호환성 브리지(compatibility bridge):</strong> 저장된 프로파일의 레거시 preset 이름을 현재 route id로 투명하게 변환한다.</li>
+    </ul>
+    <div class="callout">
+      <strong>핵심 통찰:</strong> 에이전트 루프는 어떤 모델을 쓰는지 모른다.
+      루프가 아는 것은 <em>"이 route의 transport kind가 무엇인가"</em>뿐이다.
+      나머지는 모두 어댑터가 처리한다.
+    </div>
+    <p>
+      덕분에 새 프로바이더 추가는 디스크립터 파일 하나를 작성하는 일로 줄어든다.
+      루프·툴 시스템·컨텍스트 관리 코드는 전혀 손댈 필요가 없다.
+    </p>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>통합 메시지 흐름 — 프로바이더 어댑터 계층</h2>
+    <p>
+      에이전트 루프에서 API 응답이 돌아오기까지 메시지와 툴콜 포맷이 어떻게 변환되는지를 보여준다.
+      JSON 구조 툴콜과 XML 텍스트 툴콜이 하나의 Anthropic 스트리밍 이벤트로 수렴하는 지점에 주목하라.
+    </p>
+    <pre class="mermaid">
+flowchart TD
+    Loop["에이전트 루프\n(agent loop)"]
+    Resolver["profileResolver\n→ routeForPreset\n→ routeId 확정"]
+    Compat["compatibility.ts\nPRESET_ROUTE_MAP 조회"]
+    Registry["registry.ts\n_vendors / _gateways Map"]
+    Desc["descriptor\ntransportConfig.kind"]
+
+    Loop --> Resolver
+    Resolver --> Compat
+    Compat --> Registry
+    Registry --> Desc
+
+    Desc -->|kind = anthropic-native| AdpA["anthropic.ts\nclaude.ts\n(Anthropic SDK 직접)"]
+    Desc -->|kind = openai-compatible| AdpO["openaiShim.ts\n(Chat Completions 변환)"]
+    Desc -->|kind = gemini-native| AdpG["openaiShim.ts\n+ gemini 인증 레이어"]
+    Desc -->|kind = bedrock / vertex| AdpB["vertexClient.ts\nbedrock 서명 레이어"]
+
+    AdpA -->|Anthropic Messages API| API_A["api.anthropic.com"]
+    AdpO -->|OpenAI Chat Completions| API_O["OpenAI / Azure /\nGitHub Copilot / 기타"]
+    AdpG -->|Gemini OpenAI-compat endpoint| API_G["generativelanguage\n.googleapis.com"]
+    AdpB --> API_B["AWS Bedrock /\nGoogle Vertex"]
+
+    subgraph shim["openaiShim.ts 내부 — 툴콜 포맷 변환"]
+        direction LR
+        Structured["structured tool_calls\n(JSON delta)"]
+        XML["XML 텍스트 스트림\n&lt;tool_call&gt;…&lt;/tool_call&gt;"]
+        Ollama["Ollama 텍스트 버퍼\n(특수 파서)"]
+        Unified["Anthropic 스트리밍 이벤트\ncontent_block_start\n/ input_json_delta\n/ content_block_stop"]
+        Structured --> Unified
+        XML -->|parseXmlToolCalls\n버퍼→파싱→stripRanges| Unified
+        Ollama -->|parseRawToolCalls\n텍스트→JSON| Unified
+    end
+
+    AdpO --> shim
+    shim --> Loop
+    </pre>
+    <p>
+      <strong>포맷 차이 변환 지점:</strong> <code>openaiShim.ts</code>는 스트리밍 중에 XML
+      <code>&lt;tool_call&gt;</code> 오프너를 감지하면 해당 델타를 화면에 흘리지 않고 내부 버퍼(<code>xmlToolCallText</code>)에 축적한다.
+      스트림이 끝날 때(finalize 단계) <code>parseXmlToolCalls()</code>로 파싱하여
+      Anthropic <code>tool_use</code> 블록 이벤트로 변환한다. 루프는 이 차이를 전혀 인식하지 못한다.
+    </p>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>3.1 Integration Descriptor — 선언적 프로바이더 정의</h3>
+    <p>
+      각 프로바이더는 <code>VendorDescriptor</code> 또는 <code>GatewayDescriptor</code> 객체 하나로 표현된다.
+      이 객체는 코드를 담지 않는다. 오직 <em>이 프로바이더가 어떤 것인지</em>를 기술한다.
+    </p>
+    <ul>
+      <li><code>transportConfig.kind</code>: 어떤 HTTP 어댑터를 쓸지 결정하는 핵심 필드. <code>'anthropic-native' | 'openai-compatible' | 'gemini-native' | 'bedrock' | 'vertex' | 'local'</code>.</li>
+      <li><code>transportConfig.openaiShim</code>: <code>openai-compatible</code> 계열에서 모델별 세부 조정값. 예: <code>maxTokensField</code>(일부 모델은 <code>max_tokens</code>, 다른 모델은 <code>max_completion_tokens</code>), <code>thinkingRequestFormat</code>(추론 모델의 chain-of-thought 직렬화 방식).</li>
+      <li><code>setup.authMode</code>: 인증 방식. <code>'api-key' | 'oauth' | 'adc' | 'token' | 'none'</code>.</li>
+      <li><code>catalog</code>: 이 route가 지원하는 모델 목록. <code>source: 'static' | 'dynamic' | 'hybrid'</code>로 정적 목록과 동적 검색을 조합할 수 있다.</li>
+      <li><code>preset</code>: UI/UX용 프리셋 메타데이터. 사용자 프로파일 저장 시 이 preset id를 사용한다.</li>
+    </ul>
+
+    <h3>3.2 Registry — 지연 로딩 Map</h3>
+    <p>
+      <code>registry.ts</code>는 다섯 개의 <code>Map</code>을 유지한다: <code>_brands</code>, <code>_vendors</code>, <code>_gateways</code>, <code>_anthropicProxies</code>, <code>_models</code>.
+      생성된 디스크립터 카탈로그는 약 10,000줄에 달하는 코드다. 이를 앱 시작 시점에 모두 평가하면 초기 로딩이 느려진다.
+    </p>
+    <p>
+      해결책: <code>index.ts</code>가 <code>setRegistryLazyLoader(ensureIntegrationsLoaded)</code>를 호출해
+      "첫 번째 조회 시 로드" 훅을 등록한다. 레지스트리를 읽는 모든 getter(<code>getVendor</code>, <code>getModel</code> 등)는
+      내부적으로 <code>ensureLoaded()</code>를 호출하고, 이 함수가 아직 로드되지 않은 경우에만 카탈로그를 평가한다.
+      재진입 가드(<code>_lazyLoaderRunning</code>)는 loader가 registry를 읽을 때 무한 재귀를 방지한다.
+    </p>
+
+    <h3>3.3 Compatibility Bridge — 레거시 preset 이름 매핑</h3>
+    <p>
+      사용자 프로파일에는 <code>"openai"</code>, <code>"deepseek"</code> 같은 preset 문자열이 저장된다.
+      디스크립터 시스템이 도입되면서 내부 route id 체계가 바뀌었고, 하위 호환이 필요해졌다.
+    </p>
+    <p>
+      <code>compatibility.ts</code>는 생성된 <code>PROVIDER_PRESET_MANIFEST</code>로부터
+      <code>PRESET_ROUTE_MAP: Map&lt;ProviderPreset, ProviderPresetManifestEntry&gt;</code>를 만든다.
+      <code>profileResolver.ts</code>의 <code>resolveProfileRoute()</code>는 이 맵을 첫 번째로 시도하고,
+      실패하면 vendor id → gateway id → unknown-fallback 순서로 폴백한다.
+    </p>
+
+    <h3>3.4 Capability / TransportOverride 매칭</h3>
+    <p>
+      모델 카탈로그 엔트리(<code>ModelCatalogEntry</code>)는 모델별 <code>capabilities</code>와
+      <code>transportOverrides.openaiShim</code>을 가질 수 있다. 예컨대 동일한 <code>openai-compatible</code>
+      route 내에서도 특정 모델만 <code>maxTokensField: 'max_completion_tokens'</code>를 써야 하는 경우,
+      route 전체 설정을 덮어쓰지 않고 해당 엔트리에만 오버라이드를 선언한다.
+      <code>runtimeMetadata.ts</code>의 <code>resolveOpenAIShimRuntimeContext()</code>가 이 오버라이드를 병합한다.
+    </p>
+
+    <h3>3.5 openai-shim XML 툴콜 복구</h3>
+    <p>
+      OpenAI 호환 API를 경유하는 오픈소스 모델 중 일부(GLM, Qwen, DeepSeek 계열)는
+      structured <code>tool_calls</code> 필드 대신 어시스턴트 메시지 텍스트 안에 XML을 끼워 넣는다.
+      이 XML이 그대로 화면에 표시되면 에이전트가 툴을 호출하지 못한 채 멈춘다.
+    </p>
+    <p>세 가지 방언(dialect)이 존재한다:</p>
+    <table>
+      <thead><tr><th>Dialect</th><th>예시</th><th>해석 방법</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>A — function/parameter 태그</td>
+          <td><code>&lt;tool_call&gt;&lt;function=read_file&gt;&lt;parameter=path&gt;/x&lt;/parameter&gt;&lt;/function&gt;&lt;/tool_call&gt;</code></td>
+          <td><code>XML_FUNCTION_NAME_RE</code> + <code>XML_PARAMETER_RE</code> 정규식</td>
+        </tr>
+        <tr>
+          <td>B — GLM native (arg_key/arg_value)</td>
+          <td><code>&lt;tool_call&gt;read_file&lt;arg_key&gt;path&lt;/arg_key&gt;&lt;arg_value&gt;/x&lt;/arg_value&gt;&lt;/tool_call&gt;</code></td>
+          <td>첫 토큰을 함수명으로, <code>XML_ARG_PAIR_RE</code>로 인자 추출</td>
+        </tr>
+        <tr>
+          <td>C — Hermes JSON</td>
+          <td><code>&lt;tool_call&gt;{"name":"read_file","arguments":{"path":"/x"}}&lt;/tool_call&gt;</code></td>
+          <td>태그 내부를 JSON으로 파싱</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      스트리밍 중에는 <code>&lt;tool_call&gt;</code> 오프너가 SSE 델타 경계에서 잘릴 수 있다.
+      <code>trailingXmlOpenerPrefixLen()</code>이 이를 감지하여 잘린 접두사를 <code>xmlHoldback</code>에 보관하고,
+      다음 델타와 합쳐 재판별한다. 구조화된 <code>tool_calls</code>가 도착하면 오탐(false positive)으로 판단하고
+      버퍼를 텍스트로 방출한다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 코드 예시 -->
+  <section id="code">
+    <h2>실제 코드 예시</h2>
+
+    <!-- 예시 1: defineVendor — Anthropic -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/integrations/vendors/anthropic.ts:1–27</code> — Anthropic native 벤더 디스크립터: transportConfig.kind 가 'anthropic-native' 이므로 openaiShim 없음</figcaption>
+      <pre><code class="language-typescript">import { defineVendor } from '../define.js'
+
+export default defineVendor({
+  id: 'anthropic',
+  label: 'Anthropic',
+  classification: 'anthropic',
+  defaultBaseUrl: 'https://api.anthropic.com',
+  defaultModel: 'claude-sonnet-4-6',
+  requiredEnvVars: ['ANTHROPIC_API_KEY'],
+  setup: {
+    requiresAuth: true,
+    authMode: 'api-key',
+    credentialEnvVars: ['ANTHROPIC_API_KEY'],
+  },
+  transportConfig: {
+    kind: 'anthropic-native',
+  },
+  preset: {
+    id: 'anthropic',
+    description: 'Native Claude API (x-api-key auth)',
+    apiKeyEnvVars: ['ANTHROPIC_API_KEY'],
+    baseUrlEnvVars: ['ANTHROPIC_BASE_URL'],
+    modelEnvVars: ['ANTHROPIC_MODEL'],
+  },
+  isFirstParty: true,
+  usage: { supported: true },
+})</code></pre>
+    </figure>
+
+    <!-- 예시 2: defineVendor — DeepSeek (openaiShim 세부 조정) -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/integrations/vendors/deepseek.ts:1–55</code> — openai-compatible 벤더에서 추론 모델 특화 shim 설정: thinkingRequestFormat, reasoningContentFallback, removeBodyFields</figcaption>
+      <pre><code class="language-typescript">import { defineVendor } from '../define.js'
+
+export default defineVendor({
+  id: 'deepseek',
+  label: 'DeepSeek',
+  classification: 'openai-compatible',
+  defaultBaseUrl: 'https://api.deepseek.com/v1',
+  defaultModel: 'deepseek-v4-pro',
+  requiredEnvVars: ['DEEPSEEK_API_KEY'],
+  setup: {
+    requiresAuth: true,
+    authMode: 'api-key',
+    credentialEnvVars: ['DEEPSEEK_API_KEY'],
+  },
+  transportConfig: {
+    kind: 'openai-compatible',
+    openaiShim: {
+      preserveReasoningContent: true,
+      requireReasoningContentOnAssistantMessages: true,
+      reasoningContentFallback: '',
+      thinkingRequestFormat: 'deepseek-compatible',
+      maxTokensField: 'max_tokens',
+      removeBodyFields: ['store'],
+      supportsApiFormatSelection: false,
+      supportsAuthHeaders: false,
+    },
+  },
+  // …생략
+})</code></pre>
+    </figure>
+
+    <!-- 예시 3: 레지스트리 지연 로딩 메커니즘 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/integrations/registry.ts:29–53</code> — 지연 로더 등록과 재진입 가드: 첫 getter 호출 시 카탈로그를 한 번만 평가</figcaption>
+      <pre><code class="language-typescript">let _lazyLoader: (() => void) | null = null
+let _lazyLoaderRunning = false
+
+export function setRegistryLazyLoader(loader: () => void): void {
+  _lazyLoader = loader
+}
+
+function ensureLoaded(): void {
+  // Re-entrancy guard: the loader registers descriptors, and registration can
+  // itself reach a read getter; skip while it's running so we don't recurse.
+  if (!_lazyLoader || _lazyLoaderRunning) {
+    return
+  }
+  const loader = _lazyLoader
+  _lazyLoaderRunning = true
+  try {
+    loader()
+    // Clear only after the loader succeeds, so a failed lazy import or
+    // descriptor registration retries on the next read instead of leaving the
+    // registry permanently empty/partial.
+    _lazyLoader = null
+  } finally {
+    _lazyLoaderRunning = false
+  }
+}</code></pre>
+    </figure>
+
+    <!-- 예시 4: compatibility + profileResolver -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/integrations/profileResolver.ts:23–48</code> — 저장된 provider 문자열을 route로 해석하는 4단계 폴백: preset → vendor → gateway → unknown-fallback</figcaption>
+      <pre><code class="language-typescript">export function resolveProfileRoute(provider: string): ResolvedProfileRoute {
+  // 1. Try preset mapping
+  if (isProviderPreset(provider)) {
+    return routeForPreset(provider)
+  }
+
+  // 2. Try direct vendor id
+  const vendor = getVendor(provider)
+  if (vendor) {
+    return { vendorId: vendor.id, routeId: vendor.id }
+  }
+
+  // 3. Try gateway id
+  const gateway = getGateway(provider)
+  if (gateway) {
+    return {
+      vendorId: gateway.vendorId ?? 'openai',
+      gatewayId: gateway.id,
+      routeId: gateway.id,
+    }
+  }
+
+  // 4. Safe fallback — OpenAI-compatible so the user can still interact,
+  //    but the routeId makes it clear this is unrecognised.
+  return { vendorId: 'openai', routeId: 'unknown-fallback' }
+}</code></pre>
+    </figure>
+
+    <!-- 예시 5: XML 툴콜 파서 정규식 선언 + parseXmlToolCalls 시그니처 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/api/openaiShim.ts:1251–1257</code> — GLM/Qwen XML 툴콜 3방언 대응 정규식 상수</figcaption>
+      <pre><code class="language-typescript">const XML_TOOL_CALL_OPEN = '&lt;tool_call&gt;'
+// Non-greedy block matcher; the `$` alternative tolerates a truncated final
+// block (stream cut off before the closing tag).
+const XML_TOOL_CALL_BLOCK_RE = /&lt;tool_call&gt;([\s\S]*?)(?:&lt;\/tool_call&gt;|$)/g
+const XML_FUNCTION_NAME_RE = /&lt;function=([^&gt;\s]+)\s*&gt;/
+const XML_PARAMETER_RE = /&lt;parameter=([^&gt;\s]+)\s*&gt;([\s\S]*?)&lt;\/parameter&gt;/g
+const XML_ARG_PAIR_RE = /&lt;arg_key&gt;([\s\S]*?)&lt;\/arg_key&gt;\s*&lt;arg_value&gt;([\s\S]*?)&lt;\/arg_value&gt;/g</code></pre>
+    </figure>
+
+    <!-- 예시 6: parseXmlToolCalls — Dialect A/B/C 분기 파싱 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/api/openaiShim.ts:1285–1354</code> — 세 방언 파싱 로직: fnMatch → Dialect A, argPairs → Dialect B, JSON → Dialect C; 중복 제거 후 ParsedTextToolCall[] 반환</figcaption>
+      <pre><code class="language-typescript">export function parseXmlToolCalls(text: string): {
+  calls: ParsedTextToolCall[]
+  toolCallRanges: Array&lt;[number, number]&gt;
+} {
+  const results: ParsedTextToolCall[] = []
+  const seen = new Set&lt;string&gt;()
+  const ranges: Array&lt;[number, number]&gt; = []
+
+  for (const block of text.matchAll(XML_TOOL_CALL_BLOCK_RE)) {
+    const inner = block[1] ?? ''
+    const range: [number, number] = [
+      block.index!,
+      block.index! + block[0].length,
+    ]
+    let name: string | undefined
+    const args: Record&lt;string, unknown&gt; = {}
+
+    const fnMatch = inner.match(XML_FUNCTION_NAME_RE)
+    if (fnMatch) {
+      // Dialect A: &lt;function=NAME&gt;&lt;parameter=KEY&gt;VALUE&lt;/parameter&gt;…
+      name = fnMatch[1]
+      for (const p of inner.matchAll(XML_PARAMETER_RE)) {
+        const key = p[1]
+        if (key) args[key] = coerceXmlToolValue(p[2] ?? '')
+      }
+    } else {
+      const trimmedInner = inner.trim()
+      const argPairs = [...inner.matchAll(XML_ARG_PAIR_RE)]
+      if (argPairs.length &gt; 0 &amp;&amp; !trimmedInner.startsWith('{')) {
+        // Dialect B: leading token is the function name, then arg_key/arg_value.
+        const nameTok = trimmedInner.split(/[\n&lt;]/, 1)[0]?.trim()
+        if (nameTok) name = nameTok
+        for (const p of argPairs) {
+          const key = (p[1] ?? '').trim()
+          if (key) args[key] = coerceXmlToolValue(p[2] ?? '')
+        }
+      } else {
+        // Dialect C: a JSON tool-call object inside the tags.
+        const jsonStart = trimmedInner.indexOf('{')
+        if (jsonStart !== -1) {
+          const jsonRaw = extractBalancedJson(trimmedInner, jsonStart)
+          if (jsonRaw) {
+            try {
+              const obj = JSON.parse(jsonRaw) as Record&lt;string, unknown&gt;
+              if (typeof obj['name'] === 'string') {
+                name = obj['name'] as string
+                // …생략 (arguments 병합)
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+
+    if (!name) continue
+    ranges.push(range)
+    const dedupKey = `${name}:${JSON.stringify(args)}`
+    if (seen.has(dedupKey)) continue
+    seen.add(dedupKey)
+    results.push({ id: `xml_tc_${++_textToolCallCounter}`, name, arguments: args })
+  }
+
+  return { calls: results, toolCallRanges: ranges }
+}</code></pre>
+    </figure>
+
+    <!-- 예시 7: 스트리밍 finalize — XML 버퍼를 tool_use 블록으로 변환 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/api/openaiShim.ts:2149–2187</code> — finalize 단계에서 xmlToolCallText 버퍼를 parseXmlToolCalls 로 파싱 후 Anthropic content_block_start / input_json_delta / content_block_stop 이벤트 발행</figcaption>
+      <pre><code class="language-typescript">// XML tool-call fallback for non-Ollama OpenAI-compatible providers
+// (GLM/Qwen emit `&lt;tool_call&gt;&lt;function=…&gt;` as text). Mirror the Ollama
+// path: convert buffered XML to tool_use blocks and strip the raw XML.
+let xmlClosedContentBlock = false
+if (!isOllamaStream &amp;&amp; xmlToolCallText !== null) {
+  const buffered = xmlToolCallText
+  xmlToolCallText = null
+  const { calls, toolCallRanges } = parseXmlToolCalls(buffered)
+  if (calls.length &gt; 0) {
+    const stripped = stripRanges(buffered, toolCallRanges).trim()
+    const strippedVisible = stripThinkTags(stripped).trim()
+    if (strippedVisible) {
+      yield* emitTextDelta(strippedVisible)
+    }
+    if (hasEmittedContentStart) {
+      yield* closeActiveContentBlock()
+      xmlClosedContentBlock = true
+    }
+    for (const tc of calls) {
+      const toolBlockIndex = contentBlockIndex
+      yield {
+        type: 'content_block_start',
+        index: toolBlockIndex,
+        content_block: { type: 'tool_use', id: tc.id, name: tc.name, input: {} },
+      }
+      contentBlockIndex++
+      yield {
+        type: 'content_block_delta',
+        index: toolBlockIndex,
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify(tc.arguments) },
+      }
+      yield { type: 'content_block_stop', index: toolBlockIndex }
+    }
+    if (originalFinishReason === 'stop') {
+      choice.finish_reason = 'tool_calls'
+    }
+  } else {
+    // No valid tool calls parsed — the buffered text was a false
+    // positive (e.g. the model wrote about `&lt;tool_call&gt;` literally).
+    // Emit it verbatim so nothing is lost.
+    yield* emitTextDelta(buffered)
+  }
+}</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. "직접 만든다면" 교훈 -->
+  <section id="diy">
+    <h2>"직접 만든다면" 교훈</h2>
+
+    <h3>포트/어댑터(Ports &amp; Adapters) 패턴으로 프로바이더 추상화</h3>
+    <p>
+      openclaude의 설계는 헥사고날 아키텍처(Hexagonal Architecture)의 포트/어댑터 패턴과 정확히 일치한다.
+    </p>
+    <ul>
+      <li><strong>포트(Port):</strong> <code>TransportKind</code> — 에이전트 루프가 알고 있는 "무엇을 요청할 수 있는가"의 계약.</li>
+      <li><strong>어댑터(Adapter):</strong> <code>openaiShim.ts</code>, <code>claude.ts</code>, <code>vertexClient.ts</code> — 포트 계약을 실제 외부 API로 번역하는 구현체.</li>
+      <li><strong>도메인 코어:</strong> 에이전트 루프, 툴 시스템 — 포트만 바라보며 어댑터를 모른다.</li>
+    </ul>
+
+    <p>의사코드로 표현하면:</p>
+
+    <figure class="code-ex">
+      <figcaption>의사코드 — 포트/어댑터 구조: 공통 인터페이스와 프로바이더별 어댑터 등록</figcaption>
+      <pre><code class="language-typescript">// 공통 인터페이스 (Port)
+interface LLMAdapter {
+  createMessage(params: UniversalMessageParams): AsyncGenerator&lt;UniversalStreamEvent&gt;
+}
+
+// 어댑터 등록 테이블
+const adapters: Record&lt;TransportKind, LLMAdapter&gt; = {
+  'anthropic-native': new AnthropicNativeAdapter(),
+  'openai-compatible': new OpenAIShimAdapter(),
+  'gemini-native':    new GeminiAdapter(),
+  'bedrock':          new BedrockAdapter(),
+  'vertex':           new VertexAdapter(),
+  'local':            new OllamaLocalAdapter(),
+}
+
+// 에이전트 루프 — 어댑터를 직접 모른다
+async function agentTurn(route: RouteDescriptor, messages: Message[]) {
+  const adapter = adapters[route.transportConfig.kind]
+  for await (const event of adapter.createMessage({ model: route.defaultModel, messages })) {
+    handleStreamEvent(event)  // Anthropic 이벤트 포맷만 처리
+  }
+}</code></pre>
+    </figure>
+
+    <h3>새 프로바이더 추가 시 체크리스트</h3>
+    <ol>
+      <li>
+        <strong>기존 transport kind로 커버되는가?</strong> 대부분의 새 API는 OpenAI Chat Completions를 채용하므로 <code>kind: 'openai-compatible'</code>으로 충분하다.
+        특수 인증(Azure AD, AWS SigV4 등)이 필요하면 기존 게이트웨이 디스크립터(<code>azure-openai.ts</code>, <code>bedrock</code>)를 참고한다.
+      </li>
+      <li>
+        <strong>디스크립터 파일 작성:</strong> <code>src/integrations/vendors/</code> 또는 <code>src/integrations/gateways/</code>에 파일 하나 추가.
+        <code>defineVendor()</code> / <code>defineGateway()</code>는 TypeScript가 누락 필드를 컴파일 오류로 알려 준다.
+      </li>
+      <li>
+        <strong>openaiShim 조정값 확인:</strong> 모델이 <code>max_completion_tokens</code>를 쓰는가, <code>max_tokens</code>를 쓰는가? 추론 content를 <code>reasoning_content</code> 필드로 보내는가? 이를 <code>transportOverrides.openaiShim</code>에 선언한다.
+      </li>
+      <li>
+        <strong>레지스트리 자동 등록:</strong> 생성 파이프라인이 디스크립터를 <code>integrationArtifacts.generated.js</code>에 수집한다. <code>index.ts</code>의 <code>loadIntegrationArtifacts()</code>가 이 파일을 읽어 자동으로 등록한다. 별도 등록 코드는 필요 없다.
+      </li>
+      <li>
+        <strong>XML 툴콜 방언 확인:</strong> 모델이 structured tool_calls 대신 XML을 텍스트로 내보내는가? <code>openaiShim.ts</code>의 기존 세 방언 파서가 커버하는지 확인한다. 새 포맷이라면 정규식 하나와 분기 조건을 추가한다.
+      </li>
+    </ol>
+
+    <div class="callout">
+      <strong>설계 교훈:</strong> "코드가 아닌 데이터로 프로바이더를 표현하라."
+      어댑터 코드는 극히 드물게 바뀐다. 프로바이더는 자주 추가된다.
+      변화 빈도가 다른 두 관심사를 분리하면 — 디스크립터(데이터) vs. 어댑터(코드) —
+      신규 프로바이더 추가 비용이 0에 수렴한다.
+    </div>
+
+    <blockquote>
+      "루프는 어댑터를 모른다. 어댑터는 루프를 모른다. 둘을 연결하는 것은 타입 하나, <code>TransportKind</code>다."
+    </blockquote>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="04-context-engineering.html">← 이전: 컨텍스트 엔지니어링</a>
+  <a href="06-subagents-orchestration.html">다음: 서브에이전트 오케스트레이션 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
