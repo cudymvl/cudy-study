@@ -127,8 +127,6 @@ flowchart TD
   <section id="mechanism">
     <h2>핵심 메커니즘 해설</h2>
 
-    <h3>레이어별 책임</h3>
-
     <h3>진입점 레이어 — <code>src/entrypoints/</code></h3>
     <p>
       <code>cli.tsx</code>의 <code>main()</code>은 Node.js 프로세스가 시작되자마자 실행된다.
@@ -208,7 +206,7 @@ flowchart TD
     <!-- 예시 (a): 진입점에서 엔진을 띄우는 부분 -->
     <figure class="code-ex">
       <figcaption>
-        <code class="src">src/entrypoints/cli.tsx:548-553</code> —
+        <code class="src">src/entrypoints/cli.tsx:547-553</code> —
         진입점 fast-path 끝: 모든 특수 플래그를 소진한 뒤 동적 임포트로 <code>main()</code> 호출
       </figcaption>
       <pre><code class="language-typescript">profileCheckpoint('cli_before_main_import');
@@ -308,7 +306,7 @@ profileCheckpoint('cli_after_main_complete');</code></pre>
     <!-- 예시 (e): bootstrap STATE 타입 — 글로벌 세션 상태 -->
     <figure class="code-ex">
       <figcaption>
-        <code class="src">src/bootstrap/state.ts:42-243</code> —
+        <code class="src">src/bootstrap/state.ts:42-243 (type State) · :402 (STATE 싱글톤)</code> —
         <code>State</code> 타입 선언: 프로세스 전체에 하나만 존재하는 싱글턴의 형태.
         주석 "DO NOT ADD MORE STATE HERE"는 이 파일이 얼마나 신중하게 관리되는지 보여준다.
       </figcaption>
@@ -347,7 +345,8 @@ const STATE: State = getInitialState()</code></pre>
 ├── lsp/          # Language Server Protocol 통합
 ├── github/       # GitHub 인증 + webhook
 ├── SessionMemory/# 세션 메모리 동기화
-└── voice/        # 음성 입력 (STT)</code></pre>
+├── voice/        # 음성 입력 (STT)
+# … 외 약 20개 서브디렉터리 (AgentSummary, contextCollapse, extractMemories, goal, plugins, wiki 등)</code></pre>
     </figure>
   </section>
 
