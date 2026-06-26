@@ -120,7 +120,7 @@ flowchart TD
 
     subgraph 루프["에이전트 루프 (매 턴)"]
         QUERY["쿼리 수신"]
-        SLASH["슬래시 커맨드 파싱\nprocessSlashCommand()"]
+        SLASH["슬래시 커맨드 파싱\nprocessPromptSlashCommand()"]
         SKILL_TOOL["SkillTool.call()\n→ 프롬프트 주입"]
         API["Anthropic API\n(tool_use 블록 반환)"]
         EXEC["toolExecutor\n(이름으로 디스패치)"]
