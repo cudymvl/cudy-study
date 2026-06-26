@@ -51,7 +51,62 @@
   </section>
 
   <section id="master-diagram">
-    <!-- Task 2에서 마스터 아키텍처 다이어그램 삽입 -->
+    <h2>전체 아키텍처 조감도</h2>
+    <p>openclaude의 여섯 레이어와 제어·데이터 흐름. 각 박스 안 이탤릭은 담당 디렉터리. <a href="00-architecture.html">Module 0에서 상세 해설 →</a></p>
+    <pre class="mermaid">
+flowchart TD
+    A["CLI 진입점<br/><i>src/entrypoints/cli.tsx</i>"]
+    B["Bootstrap / 세션 상태<br/><i>src/bootstrap/state.ts</i>"]
+    C["main.tsx — 초기화 오케스트레이터<br/><i>src/main.tsx</i>"]
+    D["QueryEngine — 에이전트 루프<br/><i>src/QueryEngine.ts · src/query.ts</i>"]
+
+    subgraph TOOLS["툴 레지스트리"]
+      T1["핵심 툴<br/>BashTool · FileReadTool · FileEditTool …<br/><i>src/tools/</i>"]
+      T2["에이전트 툴 (재귀)<br/>AgentTool · TaskCreateTool …<br/><i>src/tools/AgentTool/</i>"]
+      T3["툴 인터페이스 계약<br/>Tool&lt;Input, Output&gt;<br/><i>src/Tool.ts</i>"]
+    end
+
+    subgraph PROVIDER["Provider / API 레이어"]
+      P1["Anthropic SDK 래퍼<br/><i>src/services/api/claude.ts</i>"]
+      P2["멀티모델 라우팅<br/><i>src/services/api/agentRouting.ts</i>"]
+      P3["MCP 클라이언트<br/><i>src/services/mcp/</i>"]
+    end
+
+    subgraph CONTEXT["컨텍스트 서비스"]
+      X1["시스템 프롬프트 조립<br/><i>src/utils/queryContext.ts</i>"]
+      X2["Compaction / Collapse<br/><i>src/services/compact/</i>"]
+      X3["메모리 · CLAUDE.md<br/><i>src/memdir/ · src/context.ts</i>"]
+    end
+
+    subgraph PERM["권한 레이어"]
+      R1["ToolPermissionContext<br/><i>src/types/permissions.ts</i>"]
+      R2["canUseTool 게이트<br/><i>src/hooks/useCanUseTool.ts</i>"]
+      R3["정책 · 설정<br/><i>src/services/policyLimits/</i>"]
+    end
+
+    UI["Ink UI (React 터미널 렌더)<br/><i>src/components/</i>"]
+    STATE["세션 STATE 싱글턴<br/>cwd · sessionId · cost · modelUsage …"]
+
+    A -->|"동적 import 체인<br/>env 설정 후 main() 호출"| B
+    B --> STATE
+    A -->|"await importers.main()"| C
+    C -->|"getTools() 주입<br/>QueryEngineConfig 생성"| D
+    D -->|"tool.call(args, context)"| TOOLS
+    D -->|"query() → API 스트리밍"| PROVIDER
+    D -->|"fetchSystemPromptParts()"| CONTEXT
+    D -->|"wrappedCanUseTool()"| PERM
+    C -->|"renderAndRun / launchRepl"| UI
+    UI -->|"사용자 입력 → submitMessage()"| D
+    STATE -.->|"read-only 참조"| D
+    STATE -.->|"read-only 참조"| PROVIDER
+
+    classDef layer fill:#1e3a5f,stroke:#4a9eff,color:#e0f0ff
+    classDef state fill:#3a1e5f,stroke:#9a4aff,color:#f0e0ff
+    classDef ui fill:#1e5f3a,stroke:#4aff9a,color:#e0ffe8
+    class A,B,C,D layer
+    class STATE state
+    class UI ui
+    </pre>
   </section>
 
   <section id="modules">
