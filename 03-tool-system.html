@@ -203,6 +203,12 @@ flowchart TD
       반대로 <code>alwaysLoad: true</code>인 툴은 지연 없이 첫 번째 프롬프트부터 스키마가 노출된다.
       첫 턴에 반드시 사용해야 하는 툴(예: ToolSearch 자체)에 쓴다.
     </p>
+    <div class="callout">
+      <strong>스키마 인라인 타이밍:</strong> ToolSearch가 <code>tool_reference</code> 블록을 반환하면,
+      해당 툴의 풀 스키마는 <em>다음 API 호출</em> 시 응답 내 <code>tool_result</code>에 인라인된다.
+      이는 상시 노출되는 <code>tools[]</code> 배열에 영구적으로 추가되는 것이 아니라,
+      그 턴의 대화 컨텍스트 안에서만 스키마가 전개(expand)되는 방식이다.
+    </div>
   </section>
 
   <!-- 4. 실제 코드 예시 -->
@@ -211,32 +217,37 @@ flowchart TD
 
     <!-- 예시 1: Tool 인터페이스 핵심 멤버 -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/Tool.ts:391–414</code> — Tool 제네릭 타입의 필수 멤버 (전체 인터페이스에서 핵심 부분 발췌; 렌더링·UI 멤버 등은 생략)</figcaption>
+      <figcaption><code class="src">src/Tool.ts:391–532</code> — Tool 제네릭 타입의 핵심 멤버 발췌 (실제 선언 순서 기준; 렌더링·UI·isSearchOrReadCommand 등 다수 멤버 생략)</figcaption>
       <pre><code class="language-typescript">export type Tool&lt;
   Input extends AnyObject = AnyObject,
   Output = unknown,
   P extends ToolProgressData = ToolProgressData,
 &gt; = {
-  readonly name: string
-  readonly inputSchema: Input
-  call(
-    args: z.infer&lt;Input&gt;,
-    context: ToolUseContext,
-    canUseTool: CanUseToolFn,
-    parentMessage: AssistantMessage,
-    onProgress?: ToolCallProgress&lt;P&gt;,
-  ): Promise&lt;ToolResult&lt;Output&gt;&gt;
-  checkPermissions(
+  // … (aliases, searchHint, description, inputSchema, outputSchema,
+  //     isConcurrencySafe, isEnabled, isReadOnly, isDestructive,
+  //     interruptBehavior, isSearchOrReadCommand, isOpenWorld,
+  //     requiresUserInteraction, isMcp, isLsp, shouldDefer, alwaysLoad,
+  //     mcpInfo … 생략)
+  readonly name: string           // ← 실제로는 mcpInfo 다음, line 485
+  maxResultSizeChars: number
+  // … (strict, backfillObservableInput … 생략)
+  validateInput?(
     input: z.infer&lt;Input&gt;,
     context: ToolUseContext,
+  ): Promise&lt;ValidationResult&gt;
+  checkPermissions(               // ← line 529; Tool&lt;&gt; 멤버가 맞음
+    input: z.infer&lt;Input&gt;,        //   (buildTool의 TOOL_DEFAULTS에서 기본값 제공)
+    context: ToolUseContext,
   ): Promise&lt;PermissionResult&gt;
-  mapToolResultToToolResultBlockParam(
-    content: Output,
-    toolUseID: string,
-  ): ToolResultBlockParam
-  // … 렌더링·UI·분류 멤버는 생략
+  // … (getPath, mapToolResultToToolResultBlockParam 등 생략)
 }</code></pre>
     </figure>
+    <p class="callout" style="font-size:.9em">
+      <strong>주의:</strong> <code>checkPermissions</code>는 <code>Tool&lt;&gt;</code>의 멤버가 맞지만,
+      각 툴에서 직접 구현하지 않을 때는 <code>buildTool</code>의 <code>TOOL_DEFAULTS</code>가
+      &ldquo;항상 허용&rdquo; 기본값을 채워 넣는다 (<code>ToolDef</code>에서 선택적 필드로 선언됨).
+      즉 <code>Tool&lt;&gt;</code> 완성 객체에는 반드시 존재하지만, 개별 툴 정의 시에는 생략 가능하다.
+    </p>
 
     <!-- 예시 2: buildTool과 TOOL_DEFAULTS -->
     <figure class="code-ex">
@@ -322,17 +333,18 @@ async checkPermissions(input, context): Promise&lt;PermissionDecision&gt; {
 
     <!-- 예시 5: BashTool mapToolResultToToolResultBlockParam -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/tools/BashTool/BashTool.tsx:562–631</code> — 결과 직렬화: TypeScript Output → Anthropic API ToolResultBlockParam (대용량 출력 디스크 저장 분기 포함; 중간 분기 일부 생략)</figcaption>
+      <figcaption><code class="src">src/tools/BashTool/BashTool.tsx:562–631</code> — 결과 직렬화: TypeScript Output → Anthropic API ToolResultBlockParam (대용량 출력 디스크 저장 분기 포함; backgroundInfo 조립 등 중간 분기 일부 생략)</figcaption>
       <pre><code class="language-typescript">mapToolResultToToolResultBlockParam({
   interrupted,
   stdout,
   stderr,
   isImage,
   backgroundTaskId,
-  persistedOutputPath,
-  persistedOutputSize,
+  backgroundedByUser,
+  assistantAutoBackgrounded,
   structuredContent,
-  // …생략
+  persistedOutputPath,
+  persistedOutputSize
 }, toolUseID): ToolResultBlockParam {
   // 구조화 콘텐츠 (MCP structured output)
   if (structuredContent && structuredContent.length &gt; 0) {
@@ -343,61 +355,97 @@ async checkPermissions(input, context): Promise&lt;PermissionDecision&gt; {
     const block = buildImageToolResult(stdout, toolUseID)
     if (block) return block
   }
+  const normalizedStdout = typeof stdout === 'string' ? stdout : ''
+  const normalizedStderr = typeof stderr === 'string' ? stderr : ''
   let processedStdout = normalizedStdout
-    .replace(/^(\s*\n)+/, '')
-    .trimEnd()
+  if (normalizedStdout) {
+    // 선행 빈 줄 제거 후 후행 공백 제거
+    processedStdout = normalizedStdout.replace(/^(\s*\n)+/, '')
+    processedStdout = processedStdout.trimEnd()
+  }
   // 대용량 출력: 디스크에 저장하고 미리보기만 모델에 전달
   if (persistedOutputPath) {
     const preview = generatePreview(processedStdout, PREVIEW_SIZE_BYTES)
     processedStdout = buildLargeToolResultMessage({
       filepath: persistedOutputPath,
       originalSize: persistedOutputSize ?? 0,
-      preview: preview.preview,
-      hasMore: preview.hasMore,
       isJson: false,
+      preview: preview.preview,
+      hasMore: preview.hasMore
     })
   }
+  // … (errorMessage, backgroundInfo 조립 생략)
   return {
     tool_use_id: toolUseID,
     type: 'tool_result',
     content: [processedStdout, errorMessage, backgroundInfo].filter(Boolean).join('\n'),
-    is_error: interrupted,
+    is_error: interrupted
   }
 },</code></pre>
     </figure>
 
     <!-- 예시 6: ToolSearchTool — 지연 로딩과 tool_reference 반환 -->
     <figure class="code-ex">
-      <figcaption><code class="src">src/tools/ToolSearchTool/ToolSearchTool.ts:304–471</code> — 지연 로딩 시스템의 핵심: 키워드 검색 후 tool_reference 블록으로 스키마 공개 (call 내부 select: 분기 및 mapToolResult 발췌; 중간 로깅·분기 생략)</figcaption>
+      <figcaption><code class="src">src/tools/ToolSearchTool/ToolSearchTool.ts:304–471</code> — 지연 로딩 시스템의 핵심: 키워드 검색 후 tool_reference 블록으로 스키마 공개 (call 내부 select: 분기 및 mapToolResult 발췌; 중간 로깅·getPendingServerNames 등 생략)</figcaption>
       <pre><code class="language-typescript">export const ToolSearchTool = buildTool({
+  isEnabled() { return isToolSearchEnabledOptimistic() },  // ← 실제 선언 순서
+  isConcurrencySafe() { return true },
+  isReadOnly() { return true },
   name: TOOL_SEARCH_TOOL_NAME,
-  // 지연 로딩 활성화 시에만 노출
-  isEnabled() { return isToolSearchEnabledOptimistic() },
+  // … (maxResultSizeChars, description, prompt, inputSchema, outputSchema 생략)
 
   async call(input, { options: { tools }, getAppState }) {
     const { query, max_results = 5 } = input
-    // shouldDefer: true 인 툴만 대상
     const deferredTools = tools.filter(isDeferredTool)
+    // … (maybeInvalidateCache, getPendingServerNames, logSearchOutcome 생략)
 
-    // "select:ToolName" 형식 → 직접 선택
+    // "select:ToolName,…" 형식 → for 루프로 found/missing 배열 구성
     const selectMatch = query.match(/^select:(.+)$/i)
     if (selectMatch) {
-      const requested = selectMatch[1]!.split(',').map(s =&gt; s.trim())
-      const found = requested
-        .map(name =&gt; findToolByName(deferredTools, name) ?? findToolByName(tools, name))
-        .filter(Boolean)
-        .map(t =&gt; t!.name)
+      const requested = selectMatch[1]!.split(',').map(s =&gt; s.trim()).filter(Boolean)
+      const found: string[] = []
+      const missing: string[] = []
+      for (const toolName of requested) {
+        const tool =
+          findToolByName(deferredTools, toolName) ??
+          findToolByName(tools, toolName)
+        if (tool) {
+          if (!found.includes(tool.name)) found.push(tool.name)
+        } else {
+          missing.push(toolName)
+        }
+      }
+      if (found.length === 0) {
+        // … (logForDebugging, logSearchOutcome 생략)
+        const pendingServers = getPendingServerNames()
+        return buildSearchResult([], query, deferredTools.length, pendingServers)
+      }
+      // … (partial-select 로그 생략)
       return buildSearchResult(found, query, deferredTools.length)
     }
+
     // 키워드 검색 — 이름 파싱 + searchHint + 설명 텍스트 점수화
     const matches = await searchToolsWithKeywords(query, deferredTools, tools, max_results)
+    // … (logForDebugging, logSearchOutcome 생략)
+    if (matches.length === 0) {
+      // 매칭 없음: 아직 연결 중인 MCP 서버 이름을 안내 메시지에 포함
+      const pendingServers = getPendingServerNames()
+      return buildSearchResult(matches, query, deferredTools.length, pendingServers)
+    }
     return buildSearchResult(matches, query, deferredTools.length)
   },
 
+  // … (renderToolUseMessage, userFacingName 생략)
+
   // tool_reference 블록: API가 이 이름으로 지연된 스키마를 인라인 전개
-  mapToolResultToToolResultBlockParam(content, toolUseID): ToolResultBlockParam {
+  mapToolResultToToolResultBlockParam(content: Output, toolUseID: string): ToolResultBlockParam {
     if (content.matches.length === 0) {
-      return { type: 'tool_result', tool_use_id: toolUseID, content: 'No matching deferred tools found' }
+      let text = 'No matching deferred tools found'
+      if (content.pending_mcp_servers && content.pending_mcp_servers.length &gt; 0) {
+        // 연결 중인 MCP 서버가 있으면 재시도 안내 메시지 추가
+        text += `. Some MCP servers are still connecting: ${content.pending_mcp_servers.join(', ')}. Their tools will become available shortly — try searching again.`
+      }
+      return { type: 'tool_result', tool_use_id: toolUseID, content: text }
     }
     return {
       type: 'tool_result',
