@@ -297,7 +297,7 @@ export function bytesPerTokenForFileType(fileExtension: string): number {
 
     <h3>예시 2 — Auto-compact 임계값 계산과 경고 상태 판정</h3>
     <figure class="code-ex">
-      <figcaption><code class="src">src/services/compact/autoCompact.ts:35-56</code> — 유효 윈도우 크기 계산</figcaption>
+      <figcaption><code class="src">src/services/compact/autoCompact.ts:30-56</code> — 유효 윈도우 크기 계산</figcaption>
       <pre><code class="language-typescript">// Reserve this many tokens for output during compaction
 // Based on p99.99 of compact summary output being 17,387 tokens.
 const MAX_OUTPUT_TOKENS_FOR_SUMMARY = 20_000
@@ -344,7 +344,7 @@ export const AUTOCOMPACT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000</code></pre>
 
     <h3>예시 3 — shouldAutoCompact: 회로 차단기와 Context Collapse 우선순위</h3>
     <figure class="code-ex">
-      <figcaption><code class="src">src/services/compact/autoCompact.ts:263-356</code> — compact 실행 여부 판정 (핵심 가드 로직)</figcaption>
+      <figcaption><code class="src">src/services/compact/autoCompact.ts:263-357</code> — compact 실행 여부 판정 (핵심 가드 로직)</figcaption>
       <pre><code class="language-typescript">export async function shouldAutoCompact(
   messages: Message[],
   model: string,
@@ -362,6 +362,7 @@ export const AUTOCOMPACT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000</code></pre>
   if (!isAutoCompactEnabled()) {
     return false
   }
+  // …(REACTIVE_COMPACT 분기 생략)…
 
   // Context-collapse mode: same suppression. Collapse IS the context
   // management system when it's on — the 90% commit / 95% blocking-spawn
@@ -401,7 +402,7 @@ export const AUTOCOMPACT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000</code></pre>
 
     <h3>예시 4 — Context Collapse: 스팬 커밋 로직</h3>
     <figure class="code-ex">
-      <figcaption><code class="src">src/services/contextCollapse/index.ts:271-332</code> — drainStaged: staged span을 placeholder로 교체</figcaption>
+      <figcaption><code class="src">src/services/contextCollapse/index.ts:271-358</code> — drainStaged: staged span을 placeholder로 교체</figcaption>
       <pre><code class="language-typescript">function drainStaged(
   messages: Message[],
   persist: boolean,
@@ -452,7 +453,7 @@ export const AUTOCOMPACT_FAILURE_COOLDOWN_MS = 5 * 60 * 1000</code></pre>
         .then(() => persistSnapshot())
         .catch(() => {})
     }
-    // …(notifyListeners 생략)…
+    // …(notifyListeners·stale-span 저장·return 생략)…
   }
 
   return messages
