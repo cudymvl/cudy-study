@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>확장성: MCP · Skills · 슬래시 커맨드 — openclaude 학습</title>
+  <!-- 이 파일은 저장소 루트에 위치. 경로는 루트 기준. -->
+  <link rel="stylesheet" href="assets/style.css">
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Mermaid.js -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-architecture.html">0·조감도</a>
+  <a href="01-one-turn.html">1·한 턴</a>
+  <a href="02-agent-loop.html">2·루프</a>
+  <a href="03-tool-system.html">3·툴</a>
+  <a href="04-context-engineering.html">4·컨텍스트</a>
+  <a href="05-multi-model.html">5·멀티모델</a>
+  <a href="06-subagents-orchestration.html">6·서브에이전트</a>
+  <a href="07-extensibility.html" class="active">7·확장성</a>
+  <a href="08-permissions.html">8·권한</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 7</span>
+    <h1>확장성: MCP · Skills · 슬래시 커맨드</h1>
+    <p class="subtitle">코어를 건드리지 않고 기능을 확장하는 세 가지 축 — 외부 툴·절차적 지식·사용자 단축</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      에이전트가 유용해지려면 <em>능력(capability)</em>이 늘어나야 한다. 그런데 능력을 늘리는 방법이
+      "소스코드를 고친다"뿐이라면 모든 사용자가 같은 단일 바이너리에 갇힌다.
+      openclaude는 코어를 전혀 건드리지 않고 기능을 확장할 수 있는 세 가지 독립적인 축을 제공한다.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>축</th>
+          <th>무엇을 확장하나</th>
+          <th>작성 언어</th>
+          <th>누가 주로 쓰나</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>MCP 서버</strong></td>
+          <td>툴 레지스트리 — 모델이 호출할 수 있는 <code>tool_use</code> 블록 목록</td>
+          <td>임의(Python·Go·Node 등), JSON-RPC 표준 준수</td>
+          <td>외부 서비스 연동, 조직 내부 API 노출</td>
+        </tr>
+        <tr>
+          <td><strong>Skills</strong></td>
+          <td>슬래시 커맨드 레지스트리 — 프롬프트 패턴·절차적 지식</td>
+          <td>Markdown (YAML 프런트매터 + 지시문)</td>
+          <td>팀 관행, 반복 작업 절차화</td>
+        </tr>
+        <tr>
+          <td><strong>슬래시 커맨드 (builtin)</strong></td>
+          <td>REPL UI 커맨드 — 사용자가 <code>/foo</code>로 직접 호출</td>
+          <td>TypeScript (<code>Command</code> 타입 구현)</td>
+          <td>CLI 기능 추가, 내부 도구</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p>
+      세 축의 공통점은 하나다: <strong>런타임 등록(runtime registration)</strong>.
+      프로세스가 시작된 뒤, 또는 MCP 서버가 연결된 뒤에 레지스트리에 삽입되며
+      에이전트 루프나 REPL은 매 턴 레지스트리를 조회한다.
+      따라서 코어 루프 코드를 고칠 필요 없이 기능을 넣고 뺄 수 있다.
+    </p>
+
+    <div class="callout">
+      <strong>모듈 3과의 구분</strong><br>
+      모듈 3에서는 <em>툴 추상화</em>(Tool 인터페이스, ToolDef, 권한 체크 흐름)를 다뤘다.
+      이 모듈은 그 추상화를 <em>확장 지점으로 활용하는 세 가지 메커니즘</em>을 다룬다.
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>확장 지점 아키텍처</h2>
+    <p>세 확장 축이 에이전트 루프와 툴 레지스트리에 어떻게 끼워지는지 보여준다.</p>
+    <pre class="mermaid">
+flowchart TD
+    subgraph 외부["외부 (런타임 이전)"]
+        MCP_SERVER["MCP 서버 프로세스\n(stdio / HTTP / SSE)"]
+        SKILL_FILES["Skill 파일\n.claude/skills/*.md"]
+        CMD_TS["TypeScript Command\ncommands/*.ts"]
+    end
+
+    subgraph 시작["프로세스 시작"]
+        LOAD_CMD["commands.ts\nCOMMANDS() 등록"]
+        LOAD_SKILL["loadSkillsDir.ts\ngetSkillDirCommands()"]
+        LOAD_BUNDLED["bundledSkills.ts\nregisterBundledSkill()"]
+    end
+
+    subgraph 연결["MCP 연결 (비동기)"]
+        CLIENT["client.ts\nconnectMCPServer()"]
+        TOOL_CLONE["MCPTool 클론\n...MCPTool + name 오버라이드"]
+        MCP_SKILL["mcpSkills.ts\nfetchMcpSkillsForClient()"]
+    end
+
+    subgraph 레지스트리["런타임 레지스트리"]
+        TOOL_REG["Tool Registry\n(AppState.tools 배열)"]
+        CMD_REG["Command Registry\ngetCommands() → 메모이즈"]
+    end
+
+    subgraph 루프["에이전트 루프 (매 턴)"]
+        QUERY["쿼리 수신"]
+        SLASH["슬래시 커맨드 파싱\nprocessSlashCommand()"]
+        SKILL_TOOL["SkillTool.call()\n→ 프롬프트 주입"]
+        API["Anthropic API\n(tool_use 블록 반환)"]
+        EXEC["toolExecutor\n(이름으로 디스패치)"]
+    end
+
+    CMD_TS --> LOAD_CMD
+    SKILL_FILES --> LOAD_SKILL
+    LOAD_CMD --> CMD_REG
+    LOAD_SKILL --> CMD_REG
+    LOAD_BUNDLED --> CMD_REG
+    MCP_SERVER --> CLIENT
+    CLIENT --> TOOL_CLONE
+    CLIENT --> MCP_SKILL
+    TOOL_CLONE --> TOOL_REG
+    MCP_SKILL --> CMD_REG
+    QUERY --> SLASH
+    SLASH -->|"/skill 감지"| SKILL_TOOL
+    SKILL_TOOL -->|"프롬프트 확장 후"| API
+    API -->|"tool_use"| EXEC
+    EXEC -->|"이름 매칭"| TOOL_REG
+    </pre>
+
+    <blockquote>
+      핵심: 레지스트리는 두 개다. <strong>Tool Registry</strong>(모델이 API로 호출하는 것)와
+      <strong>Command Registry</strong>(사용자 또는 SkillTool이 슬래시 커맨드로 호출하는 것).
+      MCP 서버 하나가 두 레지스트리 모두에 기여할 수 있다 —
+      일반 MCP 툴은 Tool Registry에, <code>skill://</code> 리소스는 Command Registry에 들어간다.
+    </blockquote>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>① MCP 서버 연결과 툴 노출</h3>
+    <p>
+      MCP(Model Context Protocol)는 Anthropic이 정의한 JSON-RPC 2.0 기반 표준이다.
+      CLI는 <code>@modelcontextprotocol/sdk</code>의 <code>Client</code>를 사용해
+      stdio · SSE · Streamable HTTP · WebSocket 네 가지 전송 방식으로 외부 서버에 연결한다.
+    </p>
+    <p>
+      연결이 맺어지면 <code>tools/list</code> RPC를 호출해 서버가 노출하는 툴 목록을 받아온다.
+      각 툴은 <code>MCPTool</code>이라는 <em>베이스 객체를 스프레드한 뒤 이름과 스키마를 오버라이드</em>하는
+      방식으로 Tool Registry에 삽입된다. 이름 형식은 <code>mcp__{serverName}__{toolName}</code>이다.
+    </p>
+    <p>
+      MCP 서버가 <code>resources/list</code>를 지원하고
+      <code>skill://</code> URI 접두사를 가진 리소스를 노출하면,
+      <code>mcpSkills.ts</code>가 이를 읽어 Markdown 프롬프트로 변환하고
+      Command Registry에 추가한다. 이로써 MCP 서버 하나가 툴도 제공하고 Skills도 제공할 수 있다.
+    </p>
+    <p>
+      <strong>승인(permission)</strong>: 기본적으로 모든 MCP 툴 호출은
+      <code>behavior: 'passthrough'</code> — 즉 <em>매번 사용자에게 물어본다</em>.
+      사용자가 허용 규칙을 저장하면 <code>alwaysAllowRules</code>에 기록되어
+      이후 호출은 즉시 통과된다.
+    </p>
+
+    <h3>② Skill 발견·로딩·주입</h3>
+    <p>
+      Skill은 <code>~/.claude/skills/</code>, 프로젝트 <code>.claude/skills/</code>, 플러그인,
+      또는 바이너리에 번들된 형태로 존재한다.
+      <code>loadSkillsDir.ts</code>의 <code>getSkillDirCommands()</code>가
+      디렉터리를 스캔해 Markdown 파일마다 YAML 프런트매터를 파싱하고
+      <code>createSkillCommand()</code>로 <code>Command</code> 객체를 생성한다.
+      이 결과는 메모이즈되어 <code>getCommands()</code>를 통해 Command Registry에 합류한다.
+    </p>
+    <p>
+      모델이 Skill을 실행하고 싶을 때는 <code>SkillTool</code>이라는 특수 툴을 호출한다.
+      <code>SkillTool.call()</code>은 커맨드 객체를 찾아 프롬프트 내용을 컨텍스트에 <em>주입</em>하고
+      (인라인 실행), 또는 <code>context: 'fork'</code>면 서브에이전트를 생성해 격리 실행한다.
+      사용자가 직접 <code>/commit</code>처럼 입력하면
+      <code>processPromptSlashCommand()</code>를 거쳐 같은 Command 객체가 처리된다.
+    </p>
+    <p>
+      <strong>번들 Skills</strong>: 디스크 없이 CLI 바이너리에 내장된 Skills는
+      <code>registerBundledSkill()</code>로 시작 시점에 등록된다.
+      <code>getBundledSkills()</code>는 이 내부 배열을 반환한다.
+    </p>
+
+    <h3>③ 슬래시 커맨드 파싱·디스패치</h3>
+    <p>
+      builtin 슬래시 커맨드(예: <code>/mcp</code>, <code>/config</code>)는
+      <code>commands.ts</code>의 <code>COMMANDS()</code>에 정적으로 등록되는 TypeScript 객체다.
+      각 커맨드는 <code>Command</code> 타입을 만족하며 <code>type: 'prompt'</code>(프롬프트 확장)
+      또는 <code>type: 'local'</code>(UI 직접 조작) 중 하나다.
+    </p>
+    <p>
+      사용자 입력이 <code>/</code>로 시작하면 REPL이
+      <code>findCommand()</code>로 레지스트리를 검색한다.
+      일치하는 커맨드가 <code>type: 'prompt'</code>면
+      <code>getPromptForCommand()</code>를 호출해 최종 프롬프트 블록을 생성한 뒤
+      에이전트 루프에 주입한다.
+      <code>type: 'local'</code>이면 UI 코드를 직접 실행해 모델을 호출하지 않는다.
+    </p>
+
+    <h3>공통점과 차이</h3>
+    <table>
+      <thead>
+        <tr>
+          <th></th>
+          <th>MCP 툴</th>
+          <th>Skills</th>
+          <th>Builtin 커맨드</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>등록 시점</td>
+          <td>MCP 서버 연결 후 (비동기)</td>
+          <td>getCommands() 최초 호출 시 (메모이즈)</td>
+          <td>COMMANDS() 최초 호출 시 (메모이즈)</td>
+        </tr>
+        <tr>
+          <td>호출 주체</td>
+          <td>모델 (tool_use 블록)</td>
+          <td>모델(SkillTool) 또는 사용자(/slash)</td>
+          <td>사용자 (/slash)</td>
+        </tr>
+        <tr>
+          <td>실행 결과</td>
+          <td>외부 서버 RPC → 결과 반환</td>
+          <td>프롬프트 컨텍스트 주입</td>
+          <td>프롬프트 주입 또는 UI 조작</td>
+        </tr>
+        <tr>
+          <td>권한 모델</td>
+          <td>passthrough → 사용자 승인 필요</td>
+          <td>safe properties 자동 허용 또는 ask</td>
+          <td>해당 없음 (사용자가 직접 실행)</td>
+        </tr>
+        <tr>
+          <td>신뢰 경계</td>
+          <td>외부 (신뢰 낮음)</td>
+          <td>로컬/번들 (신뢰 높음), MCP 출처 (신뢰 낮음)</td>
+          <td>바이너리 내장 (신뢰 최고)</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 4. 실제 코드 예시 -->
+  <section id="code">
+    <h2>실제 코드 예시</h2>
+
+    <!-- 예시 1: MCPTool 베이스 정의 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/MCPTool/MCPTool.ts:82–116</code> — MCPTool 베이스 객체. name·description·call은 모두 플레이스홀더이며 client.ts에서 오버라이드된다.</figcaption>
+      <pre><code class="language-typescript">export const MCPTool = buildTool({
+  isMcp: true,
+  // Overridden in mcpClient.ts with the real MCP tool name + args
+  isOpenWorld() {
+    return false
+  },
+  // Overridden in mcpClient.ts
+  name: 'mcp',
+  maxResultSizeChars: 100_000,
+  // Overridden in mcpClient.ts
+  async description() {
+    return DESCRIPTION
+  },
+  // Overridden in mcpClient.ts
+  async prompt() {
+    return PROMPT
+  },
+  get inputSchema(): InputSchema {
+    return inputSchema()
+  },
+  get outputSchema(): OutputSchema {
+    return outputSchema()
+  },
+  // Overridden in mcpClient.ts
+  async call() {
+    return {
+      data: '',
+    }
+  },
+  async checkPermissions(): Promise&lt;PermissionResult&gt; {
+    return {
+      behavior: 'passthrough',
+      message: 'MCPTool requires permission.',
+    }
+  },
+  // …생략
+})</code></pre>
+    </figure>
+
+    <!-- 예시 2: client.ts 툴 클론 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/services/mcp/client.ts:1830–1896</code> — MCP 서버에서 받은 툴 목록을 MCPTool 베이스를 스프레드해 클론한다. name·description·checkPermissions가 서버별로 오버라이드된다.</figcaption>
+      <pre><code class="language-typescript">// Convert MCP tools to our Tool format
+return toolsToProcess
+  .map((tool): Tool =&gt; {
+    const fullyQualifiedName = buildMcpToolName(client.name, tool.name)
+    return {
+      ...MCPTool,
+      // In skip-prefix mode, use the original name for model invocation so MCP tools
+      // can override builtins by name. mcpInfo is used for permission checking.
+      name: skipPrefix ? tool.name : fullyQualifiedName,
+      mcpInfo: { serverName: client.name, toolName: tool.name },
+      isMcp: true,
+      // …생략
+      async description() {
+        return tool.description ?? ''
+      },
+      // …생략
+      inputJSONSchema: tool.inputSchema as Tool['inputJSONSchema'],
+      async checkPermissions() {
+        return {
+          behavior: 'passthrough' as const,
+          message: 'MCPTool requires permission.',
+          suggestions: [
+            {
+              type: 'addRules' as const,
+              rules: [
+                {
+                  toolName: fullyQualifiedName,
+                  ruleContent: undefined,
+                },
+              ],
+              behavior: 'allow' as const,
+              destination: 'localSettings' as const,
+            },
+          ],
+        }
+      },
+      // …생략
+    }
+  })</code></pre>
+    </figure>
+
+    <!-- 예시 3: mcpSkills.ts MCP 스킬 변환 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/skills/mcpSkills.ts:15–87</code> — MCP 서버의 <code>skill://</code> 리소스를 Command 객체로 변환한다. 보안상 hooks·allowedTools는 강제로 제거한다.</figcaption>
+      <pre><code class="language-typescript">const SKILL_URI_PREFIX = 'skill://'
+
+export function isSkillResource(resource: { uri: string; name?: string }): boolean {
+  return resource.uri.toLowerCase().startsWith(SKILL_URI_PREFIX)
+}
+
+export function deriveMcpSkillName(serverName: string, uri: string): string {
+  const lower = uri.toLowerCase()
+  const path = lower.startsWith(SKILL_URI_PREFIX)
+    ? uri.slice(SKILL_URI_PREFIX.length)
+    : uri
+  return `mcp__${normalizeNameForMCP(serverName)}__${path}`
+}
+
+async function readSkillResource(
+  client: Extract&lt;MCPServerConnection, { type: 'connected' }&gt;,
+  resource: ServerResource,
+): Promise&lt;Command | null&gt; {
+  // …생략
+  const skillName = deriveMcpSkillName(client.name, resource.uri)
+  const { createSkillCommand, parseSkillFrontmatterFields } = getMCPSkillBuilders()
+  const parsed = parseSkillFrontmatterFields(frontmatter, markdownContent, skillName)
+
+  return createSkillCommand({
+    ...parsed,
+    skillName,
+    markdownContent,
+    source: 'mcp',
+    baseDir: undefined,
+    loadedFrom: 'mcp',
+    paths: undefined,
+    executionContext: parsed.executionContext,
+    // Security: MCP skills are remote and untrusted. Discard any `hooks`
+    // frontmatter — otherwise the slash-command path would register them as
+    // session hooks that run shell in the user's workspace, bypassing the
+    // inline-shell guard that already blocks !`…` for loadedFrom === 'mcp'.
+    hooks: undefined,
+    // Security: likewise discard `allowed-tools`. On the user-typed slash
+    // path it is written into alwaysAllowRules (REPL onQueryImpl), so a
+    // remote skill could auto-approve tool calls (e.g. Bash) that its own
+    // body then drives the model to make — no permission prompt.
+    allowedTools: [],
+  })
+}</code></pre>
+    </figure>
+
+    <!-- 예시 4: bundledSkills.ts 번들 스킬 등록 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/skills/bundledSkills.ts:47–112</code> — CLI 바이너리에 내장된 Skills를 등록하는 레지스트리. 디스크 없이 <code>registerBundledSkill()</code>로 삽입한다.</figcaption>
+      <pre><code class="language-typescript">// Internal registry for bundled skills
+const bundledSkills: Command[] = []
+
+/**
+ * Register a bundled skill that will be available to the model.
+ * Call this at module initialization or in an init function.
+ *
+ * Bundled skills are compiled into the CLI binary and available to all users.
+ * They follow the same pattern as registerPostSamplingHook() for internal features.
+ */
+export function registerBundledSkill(definition: BundledSkillDefinition): void {
+  // …생략 (파일 추출·skillRoot 설정 등)
+  bundledSkills.push(command)
+}</code></pre>
+    </figure>
+
+    <!-- 예시 5: commands.ts getCommands -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/commands.ts:518–558</code> — Command Registry의 진입점. 빌트인·스킬·플러그인·동적 스킬을 합쳐 반환한다.</figcaption>
+      <pre><code class="language-typescript">export async function getCommands(cwd: string): Promise&lt;Command[]&gt; {
+  const allCommands = await loadAllCommands(cwd)
+
+  // Get dynamic skills discovered during file operations
+  const dynamicSkills = getDynamicSkills()
+
+  // Build base commands without dynamic skills
+  const baseCommands = allCommands.filter(
+    _ =&gt; meetsAvailabilityRequirement(_) &amp;&amp; isCommandEnabled(_),
+  )
+
+  if (dynamicSkills.length === 0) {
+    return baseCommands
+  }
+
+  // Dedupe dynamic skills - only add if not already present
+  const baseCommandNames = new Set(baseCommands.map(c =&gt; c.name))
+  const uniqueDynamicSkills = dynamicSkills.filter(
+    s =&gt;
+      !baseCommandNames.has(s.name) &amp;&amp;
+      meetsAvailabilityRequirement(s) &amp;&amp;
+      isCommandEnabled(s),
+  )
+
+  // …생략
+  // Insert dynamic skills after plugin skills but before built-in commands
+  return [
+    ...baseCommands.slice(0, insertIndex),
+    ...uniqueDynamicSkills,
+    ...baseCommands.slice(insertIndex),
+  ]
+}</code></pre>
+    </figure>
+
+    <!-- 예시 6: commit.ts 빌트인 커맨드 구조 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/commands/commit.ts:57–92</code> — 빌트인 슬래시 커맨드의 전형적 구조. <code>allowedTools</code>로 권한 범위를 선언하고, <code>getPromptForCommand</code>에서 동적 프롬프트를 생성한다.</figcaption>
+      <pre><code class="language-typescript">const command = {
+  type: 'prompt',
+  name: 'commit',
+  description: 'Create a git commit',
+  allowedTools: ALLOWED_TOOLS,
+  contentLength: 0, // Dynamic content
+  progressMessage: 'creating commit',
+  source: 'builtin',
+  async getPromptForCommand(_args, context) {
+    const promptContent = getPromptContent()
+    const finalContent = await executeShellCommandsInPrompt(
+      promptContent,
+      {
+        ...context,
+        getAppState() {
+          const appState = context.getAppState()
+          return {
+            ...appState,
+            toolPermissionContext: {
+              ...appState.toolPermissionContext,
+              alwaysAllowRules: {
+                ...appState.toolPermissionContext.alwaysAllowRules,
+                command: ALLOWED_TOOLS,
+              },
+            },
+          }
+        },
+      },
+      '/commit',
+    )
+
+    return [{ type: 'text', text: finalContent }]
+  },
+} satisfies Command
+
+export default command</code></pre>
+    </figure>
+
+    <!-- 예시 7: SkillTool.ts inputSchema와 call 요약 -->
+    <figure class="code-ex">
+      <figcaption><code class="src">src/tools/SkillTool/SkillTool.ts:291–326</code> — SkillTool의 입력 스키마와 출력 스키마. 인라인과 포크 두 가지 실행 경로가 union으로 표현된다.</figcaption>
+      <pre><code class="language-typescript">export const inputSchema = lazySchema(() =&gt;
+  z.object({
+    skill: z
+      .string()
+      .describe('The skill name. E.g., "commit", "review-pr", or "pdf"'),
+    args: z.string().optional().describe('Optional arguments for the skill'),
+  }),
+)
+
+export const outputSchema = lazySchema(() =&gt; {
+  // Output schema for inline skills (default)
+  const inlineOutputSchema = z.object({
+    success: z.boolean().describe('Whether the skill is valid'),
+    commandName: z.string().describe('The name of the skill'),
+    allowedTools: z
+      .array(z.string())
+      .optional()
+      .describe('Tools allowed by this skill'),
+    model: z.string().optional().describe('Model override if specified'),
+    status: z.literal('inline').optional().describe('Execution status'),
+  })
+
+  // Output schema for forked skills
+  const forkedOutputSchema = z.object({
+    success: z.boolean().describe('Whether the skill completed successfully'),
+    commandName: z.string().describe('The name of the skill'),
+    status: z.literal('forked').describe('Execution status'),
+    agentId: z
+      .string()
+      .describe('The ID of the sub-agent that executed the skill'),
+    result: z.string().describe('The result from the forked skill execution'),
+  })
+
+  return z.union([inlineOutputSchema, forkedOutputSchema])
+})</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. "직접 만든다면" 교훈 -->
+  <section id="diy">
+    <h2>"직접 만든다면" 교훈</h2>
+
+    <h3>플러그인 레지스트리 설계 원칙</h3>
+    <p>
+      openclaude의 세 확장 축은 모두 같은 설계 패턴을 공유한다.
+      직접 유사한 시스템을 만들 때 참고할 수 있는 원칙을 정리한다.
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>설계 결정</th>
+          <th>openclaude의 선택</th>
+          <th>대안과 트레이드오프</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>등록 시점</strong></td>
+          <td>메모이즈된 함수 — 최초 호출 시 한 번 평가</td>
+          <td>즉시 평가(빠르지만 유연성 낮음) vs 매 턴 재스캔(유연하지만 느림)</td>
+        </tr>
+        <tr>
+          <td><strong>네임스페이스</strong></td>
+          <td><code>mcp__{server}__{tool}</code> 형식으로 충돌 방지</td>
+          <td>단일 평면 네임스페이스는 간단하지만 플러그인 충돌 불가피</td>
+        </tr>
+        <tr>
+          <td><strong>베이스 오버라이드</strong></td>
+          <td>MCPTool 스프레드 후 필드 재정의</td>
+          <td>클래스 상속보다 구성이 테스트·교체에 유리</td>
+        </tr>
+        <tr>
+          <td><strong>캐시 무효화</strong></td>
+          <td><code>clearCommandsCache()</code>로 모든 메모이즈 초기화</td>
+          <td>세밀한 무효화는 복잡하지만 대규모 스킬 집합에서 필수</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>신뢰 경계 — 외부 MCP를 안전하게 다루기</h3>
+    <p>
+      외부 MCP 서버는 <em>신뢰할 수 없는 외부 코드</em>다.
+      서버가 노출하는 툴 설명(description)이나 Skill 프롬프트에는
+      악의적인 지시문이 포함될 수 있다(prompt injection).
+      openclaude가 적용하는 방어 계층을 살펴보자.
+    </p>
+
+    <div class="callout">
+      <strong>방어 1 — hooks 강제 제거 (mcpSkills.ts)</strong><br>
+      MCP에서 불러온 Skill의 YAML 프런트매터에 <code>hooks</code> 항목이 있어도
+      <code>hooks: undefined</code>로 강제 초기화한다.
+      hooks는 쉘 명령을 실행할 수 있으므로, 원격 Skill이 사용자 워크스페이스에서
+      임의 코드를 실행하는 경로를 차단한다.
+    </div>
+
+    <div class="callout">
+      <strong>방어 2 — allowed-tools 제거 (mcpSkills.ts)</strong><br>
+      MCP Skill의 <code>allowed-tools</code>도 빈 배열로 초기화한다.
+      로컬 Skill이라면 이 필드가 <code>alwaysAllowRules</code>에 기록되어
+      툴 호출이 자동 승인되지만, 원격 Skill이 동일하게 동작하면
+      서버가 Bash 같은 고위험 툴을 무승인 자동 실행시킬 수 있다.
+    </div>
+
+    <div class="callout">
+      <strong>방어 3 — passthrough 기본값 (client.ts)</strong><br>
+      MCP 툴은 기본적으로 <code>behavior: 'passthrough'</code>다.
+      즉 모델이 툴을 호출하려 할 때마다 사용자에게 물어본다.
+      사용자가 명시적으로 허용 규칙을 저장해야만 자동 통과된다.
+    </div>
+
+    <div class="callout">
+      <strong>방어 4 — 설명 길이 제한 (client.ts)</strong><br>
+      <code>MAX_MCP_DESCRIPTION_LENGTH = 2048</code>. OpenAPI 기반 서버처럼
+      15–60KB에 달하는 설명을 덤프하는 서버가 있다. 잘라내지 않으면
+      컨텍스트 창을 낭비하고, 극단적인 경우 간접 주입 공격의 표면이 된다.
+    </div>
+
+    <h3>설계 요약</h3>
+    <p>
+      외부 플러그인을 안전하게 통합하려면 <em>"허용 목록 사고방식"</em>이 필요하다.
+      플러그인이 할 수 있는 것의 최소 집합만 명시적으로 허용하고,
+      나머지는 기본적으로 차단한다.
+      openclaude의 <code>SAFE_SKILL_PROPERTIES</code> 집합
+      (<code>SkillTool.ts:885–918</code>)이 그 좋은 예다:
+      미래에 새 프로퍼티가 추가되면 기본적으로 권한 요청이 필요하도록 설계되어 있다.
+    </p>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="06-subagents-orchestration.html">← 이전: 서브에이전트 &amp; 오케스트레이션</a>
+  <a href="08-permissions.html">다음: 권한 시스템 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
