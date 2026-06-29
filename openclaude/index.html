@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>openclaude 학습 허브</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <!-- Mermaid.js -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html" class="active">허브</a>
+  <a href="00-architecture.html">0·조감도</a>
+  <a href="01-one-turn.html">1·한 턴</a>
+  <a href="02-agent-loop.html">2·루프</a>
+  <a href="03-tool-system.html">3·툴</a>
+  <a href="04-context-engineering.html">4·컨텍스트</a>
+  <a href="05-multi-model.html">5·멀티모델</a>
+  <a href="06-subagents-orchestration.html">6·서브에이전트</a>
+  <a href="07-extensibility.html">7·확장성</a>
+  <a href="08-permissions.html">8·권한</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">openclaude study</span>
+    <h1>openclaude 학습 허브</h1>
+    <p class="subtitle">AI 에이전트 코딩 프로덕트의 내부를 깊이 이해한다 — 사용자에서 빌더로</p>
+  </header>
+
+  <section id="intro">
+    <h2>이 학습 자료에 대하여</h2>
+    <p>
+      이 사이트는 <code>openclaude</code> (Claude Code 계열 에이전트) 코드베이스를 분석한 학습 자료 세트입니다.
+      단순 사용법이 아니라 <strong>"어떤 핵심 개념들이 있고, 그것들이 실제로 어떻게 구현되었는가"</strong>를 깊게 파고듭니다.
+    </p>
+    <p>
+      각 모듈은 독립적으로 읽을 수 있지만, <strong>0 → 1 → 2 → … → 8</strong> 순서로 읽으면 큰 그림에서 세부로 자연스럽게 진입합니다.
+      모듈 0(전체 조감도)과 모듈 1(한 턴의 흐름)을 먼저 읽어 전체 구조를 파악하는 것을 권장합니다.
+    </p>
+    <div class="callout">
+      <strong>학습 방법:</strong> 각 모듈은 (1) 왜 이 개념인가 → (2) 아키텍처 다이어그램 → (3) 핵심 메커니즘 해설 →
+      (4) 실제 코드 예시 → (5) "직접 만든다면" 교훈 순서로 구성됩니다.
+    </div>
+  </section>
+
+  <section id="master-diagram">
+    <h2>전체 아키텍처 조감도</h2>
+    <p>openclaude의 여섯 레이어와 제어·데이터 흐름. 각 박스 안 이탤릭은 담당 디렉터리. <a href="00-architecture.html">Module 0에서 상세 해설 →</a></p>
+    <pre class="mermaid">
+flowchart TD
+    A["CLI 진입점<br/><i>src/entrypoints/cli.tsx</i>"]
+    B["Bootstrap / 세션 상태<br/><i>src/bootstrap/state.ts</i>"]
+    C["main.tsx — 초기화 오케스트레이터<br/><i>src/main.tsx</i>"]
+    D["QueryEngine — 에이전트 루프<br/><i>src/QueryEngine.ts · src/query.ts</i>"]
+
+    subgraph TOOLS["툴 레지스트리"]
+      T1["핵심 툴<br/>BashTool · FileReadTool · FileEditTool …<br/><i>src/tools/</i>"]
+      T2["에이전트 툴 (재귀)<br/>AgentTool · TaskCreateTool …<br/><i>src/tools/AgentTool/</i>"]
+      T3["툴 인터페이스 계약<br/>Tool&lt;Input, Output&gt;<br/><i>src/Tool.ts</i>"]
+    end
+
+    subgraph PROVIDER["Provider / API 레이어"]
+      P1["Anthropic SDK 래퍼<br/><i>src/services/api/claude.ts</i>"]
+      P2["멀티모델 라우팅<br/><i>src/services/api/agentRouting.ts</i>"]
+      P3["MCP 클라이언트<br/><i>src/services/mcp/</i>"]
+    end
+
+    subgraph CONTEXT["컨텍스트 서비스"]
+      X1["시스템 프롬프트 조립<br/><i>src/utils/queryContext.ts</i>"]
+      X2["Compaction / Collapse<br/><i>src/services/compact/</i>"]
+      X3["메모리 · CLAUDE.md<br/><i>src/memdir/ · src/context.ts</i>"]
+    end
+
+    subgraph PERM["권한 레이어"]
+      R1["ToolPermissionContext<br/><i>src/types/permissions.ts</i>"]
+      R2["canUseTool 게이트<br/><i>src/hooks/useCanUseTool.ts</i>"]
+      R3["정책 · 설정<br/><i>src/services/policyLimits/</i>"]
+    end
+
+    UI["Ink UI (React 터미널 렌더)<br/><i>src/components/</i>"]
+    STATE["세션 STATE 싱글턴<br/>cwd · sessionId · cost · modelUsage …"]
+
+    A -->|"동적 import 체인<br/>env 설정 후 main() 호출"| B
+    B --> STATE
+    A -->|"await importers.main()"| C
+    C -->|"getTools() 주입<br/>QueryEngineConfig 생성"| D
+    D -->|"tool.call(args, context)"| TOOLS
+    D -->|"query() → API 스트리밍"| PROVIDER
+    D -->|"fetchSystemPromptParts()"| CONTEXT
+    D -->|"wrappedCanUseTool()"| PERM
+    C -->|"renderAndRun / launchRepl"| UI
+    UI -->|"사용자 입력 → submitMessage()"| D
+    STATE -.->|"read-only 참조"| D
+    STATE -.->|"read-only 참조"| PROVIDER
+
+    classDef layer fill:#1e3a5f,stroke:#4a9eff,color:#e0f0ff
+    classDef state fill:#3a1e5f,stroke:#9a4aff,color:#f0e0ff
+    classDef ui fill:#1e5f3a,stroke:#4aff9a,color:#e0ffe8
+    class A,B,C,D layer
+    class STATE state
+    class UI ui
+    </pre>
+  </section>
+
+  <section id="modules">
+    <h2>커리큘럼</h2>
+    <div class="module-grid">
+
+      <a class="module-card" href="00-architecture.html">
+        <span class="num">Module 0</span>
+        <h3>전체 아키텍처 조감도</h3>
+        <p>시스템 전체 레이어/서브시스템 지도, 컴포넌트 관계, 고수준 제어·데이터 흐름. "무엇이 어디에"</p>
+      </a>
+
+      <a class="module-card" href="01-one-turn.html">
+        <span class="num">Module 1</span>
+        <h3>한 턴의 전체 흐름</h3>
+        <p>프롬프트 입력 → 응답까지 조감도를 관통하는 end-to-end 추적</p>
+      </a>
+
+      <a class="module-card" href="02-agent-loop.html">
+        <span class="num">Module 2</span>
+        <h3>에이전트 루프</h3>
+        <p>LLM이 어떻게 "스스로 도구를 쓰며 반복"하나? 턴 사이클·스트리밍·종료조건·auto-continuation</p>
+      </a>
+
+      <a class="module-card" href="03-tool-system.html">
+        <span class="num">Module 3</span>
+        <h3>툴 시스템 / Tool Use</h3>
+        <p>툴 정의·스키마화·디스패치·결과 되먹임</p>
+      </a>
+
+      <a class="module-card" href="04-context-engineering.html">
+        <span class="num">Module 4</span>
+        <h3>컨텍스트 엔지니어링</h3>
+        <p>한정된 컨텍스트 윈도우 관리: compaction·collapse·메모리·토큰추정</p>
+      </a>
+
+      <a class="module-card" href="05-multi-model.html">
+        <span class="num">Module 5</span>
+        <h3>멀티모델 추상화</h3>
+        <p>하나의 루프로 200+ 모델을? tool-call 포맷 변환·openai-shim</p>
+      </a>
+
+      <a class="module-card" href="06-subagents-orchestration.html">
+        <span class="num">Module 6</span>
+        <h3>서브에이전트 &amp; 오케스트레이션</h3>
+        <p>에이전트가 에이전트를 부른다 — 위임·태스크·팀</p>
+      </a>
+
+      <a class="module-card" href="07-extensibility.html">
+        <span class="num">Module 7</span>
+        <h3>확장성: MCP · Skills · 슬래시 커맨드</h3>
+        <p>외부 기능을 플러그인처럼 끼우는 법</p>
+      </a>
+
+      <a class="module-card" href="08-permissions.html">
+        <span class="num">Module 8</span>
+        <h3>권한 &amp; 안전장치</h3>
+        <p>위험 작업 게이팅: plan mode·permission</p>
+      </a>
+
+    </div>
+  </section>
+</main>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
