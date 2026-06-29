@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module 3 — 부트스트랩 &amp; 자동 트리거 — Superpowers 학습</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-overview.html">0·조감도</a>
+  <a href="01-full-workflow.html">1·전체흐름</a>
+  <a href="02-skill-anatomy.html">2·스킬해부</a>
+  <a href="03-bootstrap-autotrigger.html" class="active">3·부트스트랩</a>
+  <a href="04-methodology-pipeline.html">4·파이프라인</a>
+  <a href="05-tdd-everywhere.html">5·TDD</a>
+  <a href="06-subagent-parallelism.html">6·서브에이전트</a>
+  <a href="07-review-verification.html">7·리뷰검증</a>
+  <a href="08-behavior-shaping.html">8·행동형성</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 3</span>
+    <h1>부트스트랩 &amp; 자동 트리거</h1>
+    <p class="subtitle">스킬이 "알아서 발동"되는 이유 — SessionStart hook이 using-superpowers를 컨텍스트에 주입하고, 1% 규칙이 스킬 발동을 강제하는 전체 메커니즘</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      Module 2에서 스킬의 구조를 해부했다. 스킬은 잘 작성된 마크다운 파일이고,
+      <code>description</code>이 트리거 신호 역할을 한다는 것도 알았다.
+      그런데 여기서 핵심 질문 하나가 남는다:
+      <strong>에이전트는 어떻게 스킬의 존재를 "처음부터" 알고 있는가?</strong>
+    </p>
+    <p>
+      이 질문에 대한 답이 없으면, 스킬은 디스크에 박제된 죽은 파일이다.
+      Superpowers의 <code>CLAUDE.md:76</code>은 이것을 정확히 지적한다:
+      "A real integration loads the <code>using-superpowers</code> bootstrap at session start.
+      The bootstrap is what causes skills to auto-trigger at the right moments.
+      Without it, the skills are dead weight — present on disk but never invoked."
+    </p>
+    <p>
+      이 모듈에서 설명하는 것은 그 부트스트랩 메커니즘의 전체 구조다:
+    </p>
+    <ol>
+      <li><strong>SessionStart hook</strong> — 세션 시작 시 자동으로 실행되는 bash 스크립트</li>
+      <li><strong>컨텍스트 주입</strong> — <code>using-superpowers/SKILL.md</code>를 읽어 JSON으로 에이전트에 전달</li>
+      <li><strong>하니스 분기</strong> — Cursor / Claude Code / Copilot CLI 등 플랫폼마다 다른 JSON 포맷</li>
+      <li><strong>1% 규칙</strong> — 주입된 using-superpowers가 에이전트를 "무조건 스킬 체크"로 강제</li>
+      <li><strong>멀티하니스 이식</strong> — <code>references/*-tools.md</code>로 도구 매핑을 추상화해 하니스 이식성 확보</li>
+    </ol>
+    <div class="callout">
+      <strong>수용 테스트(Acceptance Test):</strong>
+      Superpowers의 CLAUDE.md는 새 하니스 통합의 성공 기준을 이것으로 정의한다 —
+      깨끗한 세션에서 "Let's make a react todo list"를 보내면
+      코드를 쓰기 전에 <code>brainstorming</code> 스킬이 자동으로 발동해야 한다.
+      발동하지 않으면 통합은 실패다.
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>아키텍처 다이어그램</h2>
+    <p>
+      아래는 세션 시작부터 스킬이 발동하기까지의 전체 시퀀스다.
+      SessionStart hook이 실행되고, using-superpowers 내용이 JSON으로 에스케이프되어
+      하니스별 포맷으로 출력되고, 에이전트 컨텍스트에 주입된 후,
+      1% 규칙이 이후의 모든 스킬 체크를 강제한다.
+    </p>
+    <pre class="mermaid">
+sequenceDiagram
+    participant U as 사용자/하니스
+    participant H as hooks/session-start
+    participant F as using-superpowers/SKILL.md
+    participant J as JSON escape
+    participant B as 하니스별 출력 분기
+    participant LLM as 에이전트 컨텍스트
+
+    U->>H: 세션 시작 (SessionStart 이벤트)
+    H->>F: cat SKILL.md 읽기
+    F-->>H: 원문 마크다운 반환
+    H->>J: escape_for_json() 호출<br/>(\\, ", \n, \r, \t 이스케이프)
+    J-->>H: JSON 안전 문자열 반환
+    H->>B: 환경변수 감지<br/>(CURSOR_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT / COPILOT_CLI)
+    B-->>LLM: Cursor → additional_context<br/>Claude Code → hookSpecificOutput.additionalContext<br/>그 외 → additionalContext
+    Note over LLM: &lt;EXTREMELY_IMPORTANT&gt; 블록 수신<br/>1% 규칙 활성화
+    LLM->>LLM: 이후 모든 메시지마다 스킬 체크 강제
+    </pre>
+
+    <h3>하니스별 JSON 출력 포맷 비교</h3>
+    <p>
+      세 가지 플랫폼은 각자 다른 JSON 필드명을 기대한다.
+      Claude Code는 <code>additional_context</code>와 <code>hookSpecificOutput</code>을
+      중복 없이 읽기 때문에 플랫폼에 맞는 필드 하나만 정확하게 출력해야 한다.
+    </p>
+    <pre class="mermaid">
+graph TD
+    ENV{환경변수 감지}
+    CUR["CURSOR_PLUGIN_ROOT 존재?"]
+    CLA["CLAUDE_PLUGIN_ROOT 존재<br/>+ COPILOT_CLI 없음?"]
+    OTHER["그 외 (COPILOT_CLI=1<br/>또는 미지 플랫폼)"]
+
+    OUT_CUR["출력:<br/>{&quot;additional_context&quot;: &quot;...&quot;}"]
+    OUT_CLA["출력:<br/>{&quot;hookSpecificOutput&quot;: {<br/>  &quot;hookEventName&quot;: &quot;SessionStart&quot;,<br/>  &quot;additionalContext&quot;: &quot;...&quot;<br/>}}"]
+    OUT_OTH["출력:<br/>{&quot;additionalContext&quot;: &quot;...&quot;}"]
+
+    ENV --> CUR
+    CUR -->|"Yes"| OUT_CUR
+    CUR -->|"No"| CLA
+    CLA -->|"Yes"| OUT_CLA
+    CLA -->|"No"| OTHER
+    OTHER --> OUT_OTH
+
+    style OUT_CUR fill:#1e3a5f,stroke:#4a9eff
+    style OUT_CLA fill:#1e5f3a,stroke:#4aff9a
+    style OUT_OTH fill:#3a3a1e,stroke:#ffaa4a
+    </pre>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>1. SessionStart hook이 하는 일</h3>
+    <p>
+      <code>hooks/session-start</code>는 세 가지 작업을 순서대로 수행한다:
+    </p>
+    <ol>
+      <li>
+        <strong>파일 읽기:</strong>
+        <code>cat "${PLUGIN_ROOT}/skills/using-superpowers/SKILL.md"</code>로
+        using-superpowers의 전체 내용을 읽는다. 읽기 실패 시 에러 메시지를 대신 반환해
+        <code>set -euo pipefail</code>에도 불구하고 세션이 중단되지 않도록 한다.
+      </li>
+      <li>
+        <strong>JSON 이스케이프:</strong>
+        <code>escape_for_json()</code> 함수가 역슬래시 → 따옴표 → 개행 → CR → 탭 순으로
+        5번의 bash parameter substitution을 수행한다.
+        주석이 명시하듯 이것은 문자 단위 루프보다 "orders of magnitude faster"하다.
+      </li>
+      <li>
+        <strong>JSON 출력:</strong>
+        <code>printf</code>로 플랫폼에 맞는 JSON을 생성하고 <code>| cat</code>으로 출력한다.
+        heredoc 대신 printf를 사용하는 이유는 bash 5.3+의 heredoc hang 버그 때문이다
+        (이슈 #571).
+      </li>
+    </ol>
+    <p>
+      출력된 JSON은 하니스가 LLM 컨텍스트에 자동으로 삽입한다.
+      결과적으로 에이전트는 대화 첫 메시지를 받기 전부터 이미
+      <code>&lt;EXTREMELY_IMPORTANT&gt;</code> 블록을 읽은 상태로 시작한다.
+    </p>
+
+    <h3>2. 하니스 감지 — 환경변수 세 가지</h3>
+    <p>
+      플랫폼 감지는 환경변수 존재 유무로만 판단한다. 순서가 중요하다:
+    </p>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>우선순위</th>
+          <th>조건</th>
+          <th>플랫폼</th>
+          <th>출력 필드</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td><code>CURSOR_PLUGIN_ROOT</code> 존재</td>
+          <td>Cursor IDE</td>
+          <td><code>additional_context</code> (snake_case)</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><code>CLAUDE_PLUGIN_ROOT</code> 존재 <em>AND</em> <code>COPILOT_CLI</code> 없음</td>
+          <td>Claude Code</td>
+          <td><code>hookSpecificOutput.additionalContext</code> (중첩)</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>그 외 (fallback)</td>
+          <td>Copilot CLI (COPILOT_CLI=1) 또는 미지 플랫폼</td>
+          <td><code>additionalContext</code> (SDK 표준, top-level)</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <p>
+      Cursor가 <code>CURSOR_PLUGIN_ROOT</code>와 <code>CLAUDE_PLUGIN_ROOT</code>를
+      <em>동시에</em> 설정하는 경우가 있기 때문에 Cursor 감지를 먼저 확인한다.
+      Claude Code도 <code>CLAUDE_PLUGIN_ROOT</code>를 설정하지만 <code>COPILOT_CLI</code>는
+      설정하지 않으므로 2번 조건이 Claude Code를 정확히 선별한다.
+    </p>
+
+    <h3>3. 1% 규칙 — 스킬 발동의 강제성</h3>
+    <p>
+      주입된 using-superpowers SKILL.md의 <code>&lt;EXTREMELY-IMPORTANT&gt;</code> 블록은
+      에이전트의 스킬 체크 기준을 "확실히 필요할 때"에서 "1%라도 관련될 수 있을 때"로
+      낮춘다. 이것이 자동 트리거의 두 번째 층이다.
+    </p>
+    <p>
+      SessionStart hook이 "스킬이 있다는 것"을 알려준다면,
+      1% 규칙은 "언제든 스킬을 꺼내야 한다는 것"을 강제한다.
+      두 층이 함께 작동해야 "Let's make a react todo list" 한 마디에
+      <code>brainstorming</code>이 코드보다 먼저 발동하는 결과가 만들어진다.
+    </p>
+    <p>
+      SKILL.md는 에이전트가 이 규칙을 회피하려 드는 구체적인 합리화 패턴을
+      "Red Flags" 표로 12가지 열거한다. 예를 들어 "This is just a simple question"이라는
+      생각이 드는 것 자체가 멈춰야 한다는 신호다 — 질문도 태스크이며, 스킬 체크가 선행되어야 한다.
+    </p>
+
+    <h3>4. 멀티하니스 이식 — references/*-tools.md</h3>
+    <p>
+      스킬 본문은 특정 하니스의 도구 이름을 직접 쓰지 않는다.
+      "dispatch a subagent", "create a todo", "read a file"처럼 추상 동작으로 기술한다.
+      하니스별 도구 매핑은 <code>references/</code> 아래 파일 6개가 담당한다:
+    </p>
+    <ul>
+      <li><code>claude-code-tools.md</code> — Claude Code (Task tool, Bash, Read 등)</li>
+      <li><code>codex-tools.md</code> — OpenAI Codex</li>
+      <li><code>copilot-tools.md</code> — GitHub Copilot CLI</li>
+      <li><code>gemini-tools.md</code> — Google Gemini CLI</li>
+      <li><code>pi-tools.md</code> — Pi</li>
+      <li><code>antigravity-tools.md</code> — Antigravity</li>
+    </ul>
+    <p>
+      using-superpowers SKILL.md가 이 파일들을 링크로 안내하면,
+      에이전트는 자신이 동작 중인 하니스에 맞는 파일만 로드한다.
+      하니스가 달라져도 스킬 본문을 고칠 필요가 없다.
+      Gemini CLI는 더 나아가 <code>GEMINI.md</code>를 통해 도구 매핑을 세션 시작 시 자동 로드한다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 발췌 -->
+  <section id="excerpt">
+    <h2>실제 발췌</h2>
+
+    <!-- 발췌 1: session-start 하니스 분기 (if/elif/else) -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">hooks/session-start:29-47</code> —
+        하니스 감지 if/elif/else 분기 전체. 각 분기 앞의 주석이 왜 이 순서인지(Cursor가 두 변수를 동시 설정할 수 있음),
+        왜 <code>| cat</code>을 붙이는지(bash 5.3+ heredoc hang 회피),
+        그리고 각 플랫폼이 기대하는 JSON 필드가 다른 이유를 설명한다.
+      </figcaption>
+      <pre><code class="language-bash"># Output context injection as JSON.
+# Cursor hooks expect additional_context (snake_case).
+# Claude Code hooks expect hookSpecificOutput.additionalContext (nested).
+# Copilot CLI (v1.0.11+) and others expect additionalContext (top-level, SDK standard).
+# Claude Code reads BOTH additional_context and hookSpecificOutput without
+# deduplication, so we must emit only the field the current platform consumes.
+#
+# Uses printf instead of heredoc to work around bash 5.3+ heredoc hang.
+# See: https://github.com/obra/superpowers/issues/571
+if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+  # Cursor sets CURSOR_PLUGIN_ROOT (may also set CLAUDE_PLUGIN_ROOT)
+  printf '{\n  "additional_context": "%s"\n}\n' "$session_context" | cat
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
+  # Claude Code sets CLAUDE_PLUGIN_ROOT without COPILOT_CLI
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$session_context" | cat
+else
+  # Copilot CLI (sets COPILOT_CLI=1) or unknown platform — SDK standard format
+  printf '{\n  "additionalContext": "%s"\n}\n' "$session_context" | cat
+fi</code></pre>
+    </figure>
+
+    <!-- 발췌 2: hooks.json (Claude Code 등록) -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">hooks/hooks.json:1-16</code> —
+        Claude Code에 hook을 등록하는 설정 파일 전체.
+        <code>matcher</code> 값 <code>"startup|clear|compact"</code>가
+        세션 시작·<code>/clear</code>·<code>/compact</code> 세 이벤트에 모두 훅을 발동시킨다.
+        <code>async: false</code>는 훅 실행이 끝나기 전에 LLM이 응답하지 않도록 보장한다.
+      </figcaption>
+      <pre><code class="language-json">{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cmd\" session-start",
+            "async": false
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+    </figure>
+
+    <!-- 발췌 3: using-superpowers EXTREMELY-IMPORTANT + 1% 규칙 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:10-16</code> —
+        <code>&lt;EXTREMELY-IMPORTANT&gt;</code> 블록 전체.
+        "1% chance"라는 임계치, "YOU DO NOT HAVE A CHOICE", "not negotiable"의
+        세 단계 강도가 에이전트의 합리화 시도를 차단하는 언어 설계다.
+        이 블록이 SessionStart hook을 통해 컨텍스트에 삽입되는 것이 자동 트리거의 핵심이다.
+      </figcaption>
+      <pre><code class="language-markdown">&lt;EXTREMELY-IMPORTANT&gt;
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+&lt;/EXTREMELY-IMPORTANT&gt;</code></pre>
+    </figure>
+
+    <!-- 발췌 4: Red Flags 표 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:82-99</code> —
+        Red Flags 표 전체. 에이전트가 스킬 체크를 건너뛰려 할 때 드는 12가지 합리화 생각과
+        각각의 반박("Reality")을 대조표로 제공한다.
+        이 표 자체가 에이전트 행동 형성(behavior shaping)의 사례다 —
+        "This is just a simple question" 같은 특정 내면의 생각을 트리거로 삼아 반사적으로 멈추게 한다.
+      </figcaption>
+      <pre><code class="language-markdown">## Red Flags
+
+These thoughts mean STOP—you're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |</code></pre>
+    </figure>
+
+    <!-- 발췌 5: Platform Adaptation — references 링크 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:44</code> —
+        Platform Adaptation 섹션. 스킬 본문이 특정 하니스 도구 이름을 쓰지 않고
+        추상 동작으로 기술하며, 하니스별 매핑을 <code>references/*-tools.md</code> 6개 파일로 분리하는
+        멀티하니스 이식 전략이 한 문단에 압축되어 있다.
+      </figcaption>
+      <pre><code class="language-markdown">Skills speak in actions ("dispatch a subagent", "create a todo", "read a file") rather than naming any one runtime's tools. For per-platform tool equivalents and instructions-file conventions, see [claude-code-tools.md](references/claude-code-tools.md), [codex-tools.md](references/codex-tools.md), [copilot-tools.md](references/copilot-tools.md), [gemini-tools.md](references/gemini-tools.md), [pi-tools.md](references/pi-tools.md), and [antigravity-tools.md](references/antigravity-tools.md). Gemini CLI users get the tool mapping loaded automatically via GEMINI.md.</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. 직접 만든다면 -->
+  <section id="diy">
+    <h2>"직접 만든다면" — 최소 SessionStart 주입 패턴</h2>
+    <p>
+      자신의 "라우터 문서"(how-to, 에이전트 지침 등)를 세션 시작 시 자동 주입하고 싶다면
+      session-start 패턴을 그대로 적용할 수 있다. 핵심 단계는 세 가지다:
+    </p>
+
+    <figure class="code-ex">
+      <figcaption>
+        최소 SessionStart 주입 패턴 — Claude Code 타겟 (의사코드)
+      </figcaption>
+      <pre><code class="language-bash">#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# 1. 주입할 문서 읽기 (실패해도 세션 중단하지 않음)
+content=$(cat "${PLUGIN_ROOT}/my-router-doc.md" 2>&1 || echo "Error reading doc")
+
+# 2. JSON 이스케이프 (bash parameter substitution 방식)
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+escaped=$(escape_for_json "$content")
+
+# 3. 플랫폼 감지 후 printf로 출력 (heredoc 금지 — bash 5.3+ hang 버그)
+if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+  printf '{\n  "additional_context": "%s"\n}\n' "$escaped" | cat
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -z "${COPILOT_CLI:-}" ]; then
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$escaped" | cat
+else
+  printf '{\n  "additionalContext": "%s"\n}\n' "$escaped" | cat
+fi
+
+exit 0</code></pre>
+    </figure>
+
+    <h3>주의점 — bash 5.3+ heredoc hang</h3>
+    <p>
+      위 코드에서 <code>printf</code>를 고집하는 이유가 있다.
+      소스 주석과 이슈 #571이 명시하듯,
+      bash 5.3 이상에서는 heredoc을 파이프에 쓸 때 프로세스가 무한 대기(hang) 상태에 빠지는 버그가 있다.
+      다음 패턴은 <strong>쓰면 안 된다</strong>:
+    </p>
+    <pre><code class="language-bash"># 위험: bash 5.3+에서 hang 가능
+cat &lt;&lt;EOF | some_command
+{"additionalContext": "$escaped"}
+EOF</code></pre>
+    <p>
+      대신 반드시 <code>printf '...' "$var" | cat</code> 형태를 사용한다.
+      <code>| cat</code>은 불필요해 보이지만, 일부 하니스 환경에서 출력 버퍼링 문제를 방지하기 위해 유지한다.
+    </p>
+
+    <h3>hooks.json 등록 — matcher 범위</h3>
+    <p>
+      hook 스크립트를 만들었으면 플랫폼의 hooks 설정 파일에 등록해야 한다.
+      Claude Code라면 <code>hooks.json</code>의 <code>matcher</code>에 주의한다:
+    </p>
+    <ul>
+      <li><code>"startup|clear|compact"</code> — 세 이벤트 모두 커버 (Superpowers 기본)</li>
+      <li><code>"startup"</code>만 쓰면 <code>/clear</code> 후 컨텍스트가 사라졌을 때 재주입이 안 됨</li>
+      <li><code>async: false</code>는 반드시 유지 — LLM이 주입 전에 응답을 시작하면 효과가 없음</li>
+    </ul>
+
+    <h3>멀티하니스를 지원하는 스킬을 쓴다면</h3>
+    <p>
+      직접 만드는 스킬 본문에서도 특정 하니스의 도구 이름을 직접 쓰지 말 것.
+      "파일을 읽는다", "서브에이전트를 디스패치한다"처럼 추상 동작으로 기술하고,
+      하니스별 매핑 파일을 <code>references/</code> 아래 분리하면
+      나중에 새 하니스를 지원할 때 스킬 본문은 건드리지 않아도 된다.
+    </p>
+
+    <div class="callout">
+      <strong>핵심 인사이트:</strong>
+      SessionStart hook은 단순한 자동화 편의 기능이 아니다.
+      이것이 없으면 스킬은 에이전트가 직접 파일을 열어봐야만 존재를 알 수 있는 죽은 문서다.
+      hook → using-superpowers 주입 → 1% 규칙의 세 층이 함께 작동할 때
+      비로소 "Let's build X" 한 마디에 brainstorming이 자동으로 발동하는
+      능동적인 워크플로 시스템이 만들어진다.
+    </div>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="02-skill-anatomy.html">← 이전: 2·스킬해부</a>
+  <a href="04-methodology-pipeline.html">다음: 4·파이프라인 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>

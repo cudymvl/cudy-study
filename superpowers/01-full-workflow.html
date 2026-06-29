@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module 1 — "Let's build X"의 전체 흐름 — Superpowers 학습</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-overview.html">0·조감도</a>
+  <a href="01-full-workflow.html" class="active">1·전체흐름</a>
+  <a href="02-skill-anatomy.html">2·스킬해부</a>
+  <a href="03-bootstrap-autotrigger.html">3·부트스트랩</a>
+  <a href="04-methodology-pipeline.html">4·파이프라인</a>
+  <a href="05-tdd-everywhere.html">5·TDD</a>
+  <a href="06-subagent-parallelism.html">6·서브에이전트</a>
+  <a href="07-review-verification.html">7·리뷰검증</a>
+  <a href="08-behavior-shaping.html">8·행동형성</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 1</span>
+    <h1>"Let's build X"의 전체 흐름</h1>
+    <p class="subtitle">사용자가 "react todo 만들자"라고 입력한 순간부터 코드가 머지될 때까지 — 스킬들이 어떻게 자동 연쇄되는가</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      Module 0에서 우리는 Superpowers의 4레이어 구조를 지도로 그렸다.
+      이제 그 지도 위에 <strong>실제 개발 흐름 하나</strong>가 어떻게 진행되는지를 추적해 보자.
+    </p>
+    <p>
+      Superpowers를 처음 접하면 "스킬 파일들이 있는 것"처럼 보인다.
+      하지만 진짜 차별점은 <strong>개별 스킬이 아니라 스킬들이 자동으로 연쇄되는 방식</strong>에 있다.
+      각 스킬은 자신이 끝날 때 반드시 다음 스킬을 명시적으로 호출하도록 설계되어 있다.
+      에이전트가 임의로 단계를 건너뛰거나 순서를 바꾸지 못한다.
+    </p>
+    <p>
+      Superpowers의 공식 수락 테스트(acceptance test)는 이것이다:
+    </p>
+    <blockquote>
+      "Let's make a react todo list"
+    </blockquote>
+    <p>
+      이 한 문장을 새 세션에 입력했을 때, 에이전트가 코드를 바로 작성하지 않고
+      <strong>brainstorming 스킬을 자동 발동</strong>해 먼저 무엇을 만들지 탐색하기 시작하면 —
+      그것이 Superpowers가 제대로 동작한다는 증거다.
+      이 모듈에서는 그 순간부터 완료까지의 전체 상태 전이를 해부한다.
+    </p>
+    <div class="callout">
+      <strong>이 학습자료 자체가 산 증거다:</strong> 지금 읽고 있는 이 사이트를 만들 때도
+      동일한 파이프라인이 사용됐다. brainstorming으로 콘텐츠 구조를 협의하고,
+      writing-plans로 모듈별 태스크 계획을 작성하고, subagent-driven-development로
+      각 HTML 파일을 구현하는 흐름 — 이것이 "추상적인 설명"이 아니라
+      이 문서 자체를 생산한 실제 방법론이다.
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>아키텍처 다이어그램 — 스킬 연쇄 흐름</h2>
+    <p>
+      아래 다이어그램은 사용자가 "Let's build X"를 입력한 순간부터
+      브랜치가 완료될 때까지의 전체 상태 전이를 보여준다.
+      <strong>게이트(◆)</strong>는 에이전트가 사용자 승인을 기다리는 지점이다.
+      각 스킬 이름 아래의 <em>이탤릭</em>은 해당 스킬의 terminal state — 즉 이 스킬이 끝났을 때
+      반드시 다음으로 전이해야 하는 상태다.
+    </p>
+    <pre class="mermaid">
+sequenceDiagram
+    participant U as 사용자
+    participant US as using-superpowers<br/>(라우터)
+    participant BS as brainstorming<br/>스킬
+    participant WP as writing-plans<br/>스킬
+    participant EX as subagent-driven-development<br/>또는 executing-plans
+    participant VBC as verification-before-completion<br/>스킬
+    participant FDB as finishing-a-development-branch<br/>스킬
+
+    U->>US: "Let's build X"
+    Note over US: 1% 규칙 적용<br/>brainstorming 조건 감지
+
+    US->>BS: 자동 발동
+    BS->>BS: 컨텍스트 탐색<br/>질문 (1회씩)<br/>접근법 2-3개 제안
+    BS->>U: 설계안 제시 (섹션별)
+    U-->>BS: 승인 ✓
+    BS->>BS: 스펙 문서 작성 & 커밋<br/>자체 리뷰
+    BS->>U: 스펙 검토 요청
+    U-->>BS: 승인 ✓
+
+    Note over BS: terminal state →<br/>writing-plans만 호출 가능
+
+    BS->>WP: 자동 전이 (유일한 출구)
+    WP->>WP: 파일 구조 설계<br/>태스크 분해<br/>단계별 계획 작성<br/>플랜 자체 리뷰
+    WP->>U: 실행 방식 선택 요청<br/>①서브에이전트 ②인라인
+
+    U-->>WP: 선택 ✓
+
+    alt 서브에이전트 방식 (권장)
+        WP->>EX: subagent-driven-development 발동
+        loop 각 태스크
+            EX->>EX: 구현 서브에이전트 디스패치<br/>리뷰 서브에이전트 디스패치<br/>이슈 수정 반복
+        end
+    else 인라인 방식
+        WP->>EX: executing-plans 발동
+        EX->>EX: 태스크 순서대로 실행<br/>체크포인트마다 검증
+    end
+
+    EX->>VBC: 완료 주장 전 자동 개입
+    VBC->>VBC: 명령 실행 → 출력 확인<br/>"증거 없는 주장 = 거짓"
+
+    Note over VBC: Iron Law:<br/>NO COMPLETION CLAIMS<br/>WITHOUT FRESH VERIFICATION
+
+    VBC->>FDB: 검증 통과 후 전이
+    FDB->>U: 완료 보고 (커밋·PR·정리)
+    </pre>
+
+    <h3>스킬 선택 라우팅 — using-superpowers의 내부 로직</h3>
+    <p>
+      라우터 스킬(<code>using-superpowers</code>)이 "Let's build X" 메시지를 받았을 때
+      어떻게 brainstorming을 선택하는지도 명시적으로 문서화되어 있다:
+    </p>
+    <pre class="mermaid">
+flowchart TD
+    MSG(["사용자 메시지 수신 ②"])
+    PLANQ(["플랜 모드 진입 예정? ①"])
+    BRAINQ{"이미 brainstorming 했는가?"}
+    BRAIN["brainstorming 스킬 발동"]
+    ANYQ{"다른 스킬이 적용되는가?<br/>(1% 가능성만 있어도)"}
+    INVOKE["해당 스킬 발동"]
+    ANNOUNCE["'Using [skill] to [purpose]' 선언"]
+    CHKQ{"체크리스트 있는가?"}
+    TODOS["체크리스트 항목 → 각각 todo 생성"]
+    FOLLOW["스킬 지침을 정확히 따름"]
+    RESPOND(["응답 (명확화 질문 포함)"])
+
+    MSG --> ANYQ
+    ANYQ -->|"1%라도 yes"| INVOKE
+    ANYQ -->|"확실히 no"| RESPOND
+    INVOKE --> ANNOUNCE
+    ANNOUNCE --> CHKQ
+    CHKQ -->|"yes"| TODOS
+    CHKQ -->|"no"| FOLLOW
+    TODOS --> FOLLOW
+
+    PLANQ --> BRAINQ
+    BRAINQ -->|"no"| BRAIN
+    BRAIN --> ANYQ
+    BRAINQ -->|"yes"| ANYQ
+
+    style BRAIN fill:#1e3a5f,stroke:#4a9eff
+    style MSG fill:#3a1e5f,stroke:#9a4aff
+    style PLANQ fill:#3a1e5f,stroke:#9a4aff
+    style RESPOND fill:#1e5f3a,stroke:#4aff9a
+    </pre>
+    <p class="callout">
+      <strong>스킬 우선순위 규칙 (<code>skills/using-superpowers/SKILL.md:104-108</code>):</strong>
+      "Process skills first (brainstorming, systematic-debugging) — these determine HOW to approach the task.
+      Implementation skills second — these guide execution.
+      'Let's build X' → brainstorming first, then implementation skills."
+    </p>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>Terminal State 규칙 — 각 스킬의 유일한 출구</h3>
+    <p>
+      Superpowers 파이프라인이 "에이전트가 임의로 단계를 건너뛰지 못하는" 이유는
+      각 스킬이 자신의 <strong>terminal state</strong>(종착 상태)를 명시적으로 제한하기 때문이다.
+      이것이 이 파이프라인을 "상태 기계(state machine)"로 볼 수 있는 근거다.
+    </p>
+
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>스킬</th>
+          <th>Terminal State (유일한 출구)</th>
+          <th>금지된 전이</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>brainstorming</code></td>
+          <td><strong>writing-plans 호출만 허용</strong></td>
+          <td>frontend-design, mcp-builder 등 구현 스킬 직접 호출 금지</td>
+        </tr>
+        <tr>
+          <td><code>writing-plans</code></td>
+          <td>subagent-driven-development <em>또는</em> executing-plans (사용자 선택)</td>
+          <td>직접 코드 작성 금지</td>
+        </tr>
+        <tr>
+          <td><code>subagent-driven-development</code></td>
+          <td>finishing-a-development-branch (최종 리뷰 후)</td>
+          <td>리뷰 없이 다음 태스크 진행 금지</td>
+        </tr>
+        <tr>
+          <td><code>executing-plans</code></td>
+          <td>finishing-a-development-branch</td>
+          <td>블로커 상태에서 추측하여 계속 진행 금지</td>
+        </tr>
+        <tr>
+          <td><code>verification-before-completion</code></td>
+          <td>검증 명령 실행 후 결과 확인</td>
+          <td>"아마 통과할 것"과 같은 가정 기반 완료 주장 금지</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>HARD-GATE — brainstorming의 불통과 장벽</h3>
+    <p>
+      파이프라인 전체에서 가장 강력한 게이트는 brainstorming 스킬 첫 번째 항목이다.
+      이 게이트는 설계 승인 없이는 어떤 구현 행동도 허용하지 않는다 —
+      프로젝트 크기와 무관하게, "단순하다"는 판단과 무관하게:
+    </p>
+    <blockquote>
+      "Do NOT invoke any implementation skill, write any code, scaffold any project,
+      or take any implementation action until you have presented a design and the user has approved it.
+      This applies to EVERY project regardless of perceived simplicity."
+      <br><em>— skills/brainstorming/SKILL.md:13-14</em>
+    </blockquote>
+    <p>
+      이 HARD-GATE가 존재하는 이유를 스킬은 직접 설명한다:
+      "Simple projects are where unexamined assumptions cause the most wasted work."
+      간단해 보이는 todo 앱조차 "어떤 상태 관리 라이브러리?", "로컬 스토리지 vs 서버?",
+      "타입스크립트 사용 여부?" 같은 결정이 필요하다.
+      이 결정들이 설계 단계에서 명시되지 않으면 구현 후 리워크로 돌아온다.
+    </p>
+
+    <h3>writing-plans의 Execution Handoff</h3>
+    <p>
+      writing-plans 스킬이 플랜 문서를 저장한 뒤 실행 단계로 넘어가는 방식은
+      단순히 "다음 스킬을 쓰세요"가 아니다. 사용자에게 두 가지 실행 방식을 명확히 제시하고
+      선택권을 준다. 이 선택이 파이프라인의 분기점이 된다:
+    </p>
+    <blockquote>
+      "Plan complete and saved to <code>docs/superpowers/plans/&lt;filename&gt;.md</code>. Two execution options:<br><br>
+      <strong>1. Subagent-Driven (recommended)</strong> — I dispatch a fresh subagent per task, review between tasks, fast iteration<br><br>
+      <strong>2. Inline Execution</strong> — Execute tasks in this session using executing-plans, batch execution with checkpoints<br><br>
+      Which approach?"
+      <br><em>— skills/writing-plans/SKILL.md:160-166</em>
+    </blockquote>
+    <p>
+      서브에이전트 방식이 권장되는 이유: 각 태스크마다 신선한 컨텍스트를 가진 서브에이전트가
+      디스패치되므로 이전 태스크의 편향이나 오류가 누적되지 않는다.
+      또한 태스크 완료 후 즉시 리뷰(spec 준수 + 코드 품질)가 따르므로 조기에 문제를 포착한다.
+    </p>
+
+    <h3>subagent-driven-development의 태스크 루프</h3>
+    <p>
+      실행 단계에서 서브에이전트 방식을 선택했을 때, 각 태스크는 다음 순환을 거친다:
+    </p>
+    <ol>
+      <li><strong>구현 서브에이전트 디스패치</strong> — 플랜에서 해당 태스크만 추출해 신선한 컨텍스트로 시작</li>
+      <li><strong>구현 완료 보고</strong> — DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED 중 하나</li>
+      <li><strong>리뷰 서브에이전트 디스패치</strong> — diff 파일을 전달, spec 준수 + 코드 품질 두 가지 평가</li>
+      <li><strong>이슈 발견 시</strong> — Critical/Important 수준이면 수정 서브에이전트 재디스패치 후 재리뷰</li>
+      <li><strong>승인 시</strong> — 태스크 완료 기록, 다음 태스크로</li>
+    </ol>
+    <p>
+      이 루프가 모든 태스크를 통과하면 <strong>최종 whole-branch 코드 리뷰</strong>가 한 번 더 실행되고,
+      그 후 <code>finishing-a-development-branch</code> 스킬로 전이된다.
+    </p>
+
+    <h3>verification-before-completion — 파이프라인의 공통 경비</h3>
+    <p>
+      이 스킬은 파이프라인의 특정 단계가 아니라 <strong>모든 완료 주장 직전에</strong> 개입한다.
+      "증거 없는 주장은 거짓이다"라는 원칙을 코드화한 것이다.
+      각 서브에이전트의 태스크 완료 보고, 전체 파이프라인의 완료 선언 —
+      어느 것도 실제 검증 명령 실행 없이는 성립하지 않는다.
+    </p>
+
+    <h3>이 학습자료가 통과한 파이프라인</h3>
+    <p>
+      지금 읽고 있는 이 사이트 자체가 동일한 파이프라인의 산물이다:
+    </p>
+    <ol>
+      <li><strong>brainstorming</strong> — "Superpowers 학습 사이트를 만들자"에서 시작해
+          모듈 구성, 발췌 방식, 한국어 교육 스타일 등을 협의해 스펙 문서 작성</li>
+      <li><strong>writing-plans</strong> — 9개 모듈 각각의 HTML 파일, 공통 자산(CSS, style.css),
+          태스크별 brief/report 구조를 단계별 계획으로 분해</li>
+      <li><strong>subagent-driven-development</strong> — 각 모듈 HTML을 독립 태스크로 디스패치,
+          인용 검증 포함 self-review 후 커밋</li>
+    </ol>
+    <p>
+      "이론"이 아니라 이 문서가 존재한다는 사실 자체가 파이프라인의 동작 증거다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 발췌 -->
+  <section id="excerpt">
+    <h2>실제 발췌</h2>
+
+    <!-- 발췌 1: brainstorming HARD-GATE -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/brainstorming/SKILL.md:12-14</code> —
+        HARD-GATE 블록. 설계 승인 없이는 어떤 구현 행동도 금지한다.
+        "<em>regardless of perceived simplicity</em>"가 핵심 — 에이전트가
+        "이건 너무 간단해서 설계 불필요"라고 합리화하는 것을 원천 차단한다.
+      </figcaption>
+      <pre><code class="language-markdown">&lt;HARD-GATE&gt;
+Do NOT invoke any implementation skill, write any code, scaffold any project, or take any implementation action until you have presented a design and the user has approved it. This applies to EVERY project regardless of perceived simplicity.
+&lt;/HARD-GATE&gt;</code></pre>
+    </figure>
+
+    <!-- 발췌 2: using-superpowers skill_flow dot graph -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:52-80</code> —
+        라우터 스킬의 <code>skill_flow</code> dot 그래프. 에이전트가 메시지를 받았을 때
+        어떤 결정 경로로 스킬을 선택하는지를 Graphviz DOT 형식으로 명시한다.
+        <code>doublecircle</code> 노드가 시작/종료 상태, <code>diamond</code>가 분기 게이트다.
+      </figcaption>
+      <pre><code class="language-dot">digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to enter plan mode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke the skill" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create a todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to enter plan mode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke the skill" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke the skill" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create a todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create a todo per item" -> "Follow skill exactly";
+}</code></pre>
+    </figure>
+
+    <!-- 발췌 3: writing-plans Execution Handoff -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/writing-plans/SKILL.md:156-174</code> —
+        Execution Handoff 섹션. 플랜 저장 후 실행 방식을 사용자가 선택하도록 하는
+        정형화된 메시지 형식. 이 분기가 서브에이전트 방식과 인라인 방식을 결정하며,
+        각각 다른 스킬이 <strong>REQUIRED SUB-SKILL</strong>로 명시된다.
+      </figcaption>
+      <pre><code class="language-markdown">## Execution Handoff
+
+After saving the plan, offer execution choice:
+
+**"Plan complete and saved to `docs/superpowers/plans/&lt;filename&gt;.md`. Two execution options:**
+
+**1. Subagent-Driven (recommended)** - I dispatch a fresh subagent per task, review between tasks, fast iteration
+
+**2. Inline Execution** - Execute tasks in this session using executing-plans, batch execution with checkpoints
+
+**Which approach?"**
+
+**If Subagent-Driven chosen:**
+- **REQUIRED SUB-SKILL:** Use superpowers:subagent-driven-development
+- Fresh subagent per task + two-stage review
+
+**If Inline Execution chosen:**
+- **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
+- Batch execution with checkpoints for review</code></pre>
+    </figure>
+
+    <!-- 발췌 4: brainstorming terminal state 선언 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/brainstorming/SKILL.md:61</code> —
+        brainstorming의 terminal state를 한 문장으로 못 박는 핵심 선언.
+        "The ONLY skill you invoke after brainstorming is writing-plans"가
+        상태 기계에서 출구를 하나로 제한하는 설계 원칙이다.
+      </figcaption>
+      <pre><code class="language-markdown">**The terminal state is invoking writing-plans.** Do NOT invoke frontend-design, mcp-builder, or any other implementation skill. The ONLY skill you invoke after brainstorming is writing-plans.</code></pre>
+    </figure>
+
+    <!-- 발췌 5: verification-before-completion Iron Law -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/verification-before-completion/SKILL.md:18-22</code> —
+        Iron Law. 파이프라인 어느 단계에서든 완료를 주장하기 전에 적용되는
+        절대 원칙이다. 이 규칙이 없으면 서브에이전트가 "성공"을 보고하고 다음으로 넘어가도
+        실제 검증이 이루어졌는지 보장할 수 없다.
+      </figcaption>
+      <pre><code class="language-markdown">```
+NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+```
+
+If you haven't run the verification command in this message, you cannot claim it passes.</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. 직접 만든다면 -->
+  <section id="diy">
+    <h2>"직접 만든다면" 교훈</h2>
+    <p>
+      Superpowers 파이프라인의 핵심 설계 원칙을 추출하면,
+      이것은 <strong>각 스킬이 다음 스킬을 명시적으로 호출하는 상태 기계</strong>다.
+      일반적인 체크리스트나 가이드라인과 다른 점은 네 가지다.
+    </p>
+
+    <h3>원칙 1: 출구를 명시적으로 제한하라</h3>
+    <p>
+      brainstorming 스킬이 "다음으로 writing-plans를 쓰세요"라고만 했다면
+      에이전트는 "이번엔 간단하니까 직접 구현해도 되겠다"라고 합리화할 수 있다.
+      Superpowers는 이를 두 겹으로 막는다:
+    </p>
+    <ul>
+      <li>HARD-GATE: 구현 행동 자체를 명시적으로 금지</li>
+      <li>Terminal state 선언: "The ONLY skill you invoke is writing-plans"</li>
+    </ul>
+    <p>
+      출구가 하나뿐인 상태 기계는 에이전트의 합리화 경로를 원천 차단한다.
+    </p>
+
+    <h3>원칙 2: 사용자 게이트를 명시적 체크포인트로 만들어라</h3>
+    <p>
+      파이프라인에는 두 개의 주요 사용자 게이트가 있다:
+    </p>
+    <ol>
+      <li><strong>설계 승인</strong> (brainstorming → writing-plans 전환 전)</li>
+      <li><strong>실행 방식 선택</strong> (writing-plans → 실행 스킬 전환 시)</li>
+    </ol>
+    <p>
+      이 게이트들이 "묵시적 동의"(응답 없으면 계속 진행)가 아니라
+      명시적 응답을 요구하는 이유: 에이전트가 잘못된 방향으로 한 시간을 달리다가
+      결국 처음부터 다시 하는 비용을 방지하기 위해서다.
+    </p>
+
+    <h3>원칙 3: 서브에이전트는 컨텍스트 오염을 방지한다</h3>
+    <p>
+      태스크 N의 구현 실수나 선택이 태스크 N+1의 에이전트 판단에 영향을 주지 않도록,
+      각 태스크는 신선한 컨텍스트를 가진 서브에이전트로 실행된다.
+      컨트롤러(오케스트레이터)는 "각 서브에이전트가 필요한 것만" 정밀하게 전달한다:
+    </p>
+    <pre><code class="language-text">컨트롤러가 구현 서브에이전트에게 전달하는 것:
+  ① 이 태스크가 프로젝트에서 어떤 위치인지 (1줄)
+  ② 태스크 brief 파일 경로 (요구사항의 유일한 출처)
+  ③ 이전 태스크들이 결정한 인터페이스 (brief가 모를 수 있는 것)
+  ④ 리포트 파일 경로 (서브에이전트가 결과를 기록할 곳)
+
+컨트롤러가 전달하지 않는 것:
+  ✗ 이전 태스크들의 전체 대화 기록
+  ✗ 수정된 의사결정 이력
+  ✗ 태스크 1-N의 누적 컨텍스트 요약</code></pre>
+
+    <h3>원칙 4: 진행 상태를 파일에 기록하라</h3>
+    <p>
+      LLM의 컨텍스트 메모리는 세션 압축(compaction) 시 소실된다.
+      subagent-driven-development 스킬은 이를 해결하기 위해
+      <code>.superpowers/sdd/progress.md</code> 파일에 완료된 태스크를 기록하도록 강제한다.
+      컨텍스트 압축 후 재개 시 에이전트는 이 파일을 먼저 확인하고
+      이미 완료된 태스크를 다시 실행하는 실수를 방지한다.
+    </p>
+
+    <div class="callout">
+      <strong>상태 기계로 보는 핵심 인사이트:</strong>
+      Superpowers 파이프라인의 각 스킬은 <em>입력(트리거 조건) → 처리(체크리스트) → 출력(terminal state)</em>를
+      명시적으로 정의한다. 이 세 요소가 모두 명시된 스킬은 에이전트가 임의로 해석하거나
+      단계를 생략할 여지가 없다. 자신만의 방법론 플러그인을 만든다면 —
+      각 워크플로우 단계를 "다음 단계가 무엇인가"까지 포함해 명시해야 한다.
+      "좋은 방법론"이 아니라 "강제되는 방법론"이어야 에이전트가 따른다.
+    </div>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="00-overview.html">← 이전: 0·전체 조감도</a>
+  <a href="02-skill-anatomy.html">다음: 2·스킬 해부 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>

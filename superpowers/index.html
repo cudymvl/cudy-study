@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Superpowers 학습 허브</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html" class="active">허브</a>
+  <a href="00-overview.html">0·조감도</a>
+  <a href="01-full-workflow.html">1·전체흐름</a>
+  <a href="02-skill-anatomy.html">2·스킬해부</a>
+  <a href="03-bootstrap-autotrigger.html">3·부트스트랩</a>
+  <a href="04-methodology-pipeline.html">4·파이프라인</a>
+  <a href="05-tdd-everywhere.html">5·TDD</a>
+  <a href="06-subagent-parallelism.html">6·서브에이전트</a>
+  <a href="07-review-verification.html">7·리뷰검증</a>
+  <a href="08-behavior-shaping.html">8·행동형성</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">superpowers study</span>
+    <h1>Superpowers 학습 허브</h1>
+    <p class="subtitle">에이전트가 어떻게 일해야 좋은 코드를 만드는가 — 방법론 레이어의 내부를 읽는다</p>
+  </header>
+
+  <section id="intro">
+    <h2>이 학습 자료에 대하여</h2>
+    <p>
+      이 사이트는 <code>Superpowers</code> — Claude Code 위에서 동작하는 방법론 플러그인 — 를 분석한 학습 자료 세트입니다.
+      단순 "어떻게 쓰나"가 아니라 <strong>"어떤 핵심 개념들이 있고, 그것들이 실제로 어떻게 설계·구현되었는가"</strong>를 깊게 파고듭니다.
+    </p>
+    <p>
+      각 모듈은 독립적으로 읽을 수 있지만, <strong>0 → 1 → 2 → … → 8</strong> 순서로 읽으면 큰 그림에서 세부로 자연스럽게 진입합니다.
+      모듈 0(전체 조감도)과 모듈 1(전체 흐름)을 먼저 읽어 구조를 파악하는 것을 권장합니다.
+    </p>
+    <div class="callout">
+      <strong>학습 방법:</strong> 각 모듈은 (1) 왜 이 개념인가 → (2) 아키텍처 다이어그램 → (3) 핵심 메커니즘 해설 →
+      (4) 실제 발췌(SKILL.md 원문) → (5) "직접 만든다면" 교훈 순서로 구성됩니다.
+    </div>
+  </section>
+
+  <section id="master-diagram">
+    <h2>Superpowers 4레이어 구조</h2>
+    <p>부트스트랩 → 라우터 스킬 → 스킬 라이브러리 → 방법론 파이프라인. 각 박스 안 이탤릭은 실제 파일 경로. <a href="00-overview.html">Module 0에서 상세 해설 →</a></p>
+    <pre class="mermaid">
+flowchart TD
+    H["SessionStart hook<br/><i>hooks/session-start</i>"]
+    U["라우터 스킬: using-superpowers<br/>(부트스트랩으로 주입)<br/><i>skills/using-superpowers/SKILL.md</i>"]
+    subgraph LIB["스킬 라이브러리 (skills/)"]
+      B["brainstorming"]
+      W["writing-plans"]
+      S["subagent-driven-development"]
+      E["executing-plans"]
+      V["verification-before-completion"]
+      T["test-driven-development"]
+      WS["writing-skills"]
+      etc["… dispatching-parallel-agents · using-git-worktrees · code-review …"]
+    end
+    P["방법론 파이프라인<br/>아이디어 → 스펙 → 플랜 → 실행 → 검증"]
+    HARNESS["멀티 하니스<br/>Claude Code · Codex · Gemini · Copilot · Cursor"]
+
+    HARNESS -->|"세션 시작 시 실행"| H
+    H -->|"using-superpowers 내용을<br/>additionalContext로 주입"| U
+    U -->|"1% 규칙: 관련되면 무조건 스킬 발동"| LIB
+    LIB --> P
+    </pre>
+  </section>
+
+  <section id="modules">
+    <h2>커리큘럼</h2>
+    <div class="module-grid">
+
+      <a class="module-card" href="00-overview.html">
+        <span class="num">Module 0</span>
+        <h3>전체 조감도</h3>
+        <p>4레이어 구조(부트스트랩·라우터·스킬 라이브러리·파이프라인)와 "무엇이 어디에"</p>
+      </a>
+
+      <a class="module-card" href="01-full-workflow.html">
+        <span class="num">Module 1</span>
+        <h3>"Let's build X"의 전체 흐름</h3>
+        <p>유저 한마디 → 스킬 연쇄 발동 → 결과까지 end-to-end 추적</p>
+      </a>
+
+      <a class="module-card" href="02-skill-anatomy.html">
+        <span class="num">Module 2</span>
+        <h3>Skill 해부학</h3>
+        <p>frontmatter·트리거·스킬 3종·progressive disclosure</p>
+      </a>
+
+      <a class="module-card" href="03-bootstrap-autotrigger.html">
+        <span class="num">Module 3</span>
+        <h3>부트스트랩 &amp; 자동 트리거</h3>
+        <p>"그냥 알아서 발동"의 엔지니어링: hook 주입·1% 규칙·멀티하니스</p>
+      </a>
+
+      <a class="module-card" href="04-methodology-pipeline.html">
+        <span class="num">Module 4</span>
+        <h3>방법론 파이프라인</h3>
+        <p>아이디어→스펙→플랜→실행. HARD GATE와 "설계 먼저"</p>
+      </a>
+
+      <a class="module-card" href="05-tdd-everywhere.html">
+        <span class="num">Module 5</span>
+        <h3>모든 것에 TDD</h3>
+        <p>RED-GREEN-REFACTOR + "스킬 작성도 TDD" 메타 개념</p>
+      </a>
+
+      <a class="module-card" href="06-subagent-parallelism.html">
+        <span class="num">Module 6</span>
+        <h3>서브에이전트 주도 개발 &amp; 병렬화</h3>
+        <p>자율 작업·위임·격리(worktree)·병렬</p>
+      </a>
+
+      <a class="module-card" href="07-review-verification.html">
+        <span class="num">Module 7</span>
+        <h3>리뷰 &amp; 검증 루프</h3>
+        <p>코드리뷰·완료 전 검증·브랜치 마무리 게이트</p>
+      </a>
+
+      <a class="module-card" href="08-behavior-shaping.html">
+        <span class="num">Module 8</span>
+        <h3>행동 형성 언어 기법</h3>
+        <p>"스킬은 산문이 아니라 코드": Red Flags·합리화 차단·HARD-GATE</p>
+      </a>
+
+    </div>
+  </section>
+</main>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>

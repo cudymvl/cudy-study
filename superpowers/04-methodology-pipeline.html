@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module 4 — 방법론 파이프라인 — Superpowers 학습</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-overview.html">0·조감도</a>
+  <a href="01-full-workflow.html">1·전체흐름</a>
+  <a href="02-skill-anatomy.html">2·스킬해부</a>
+  <a href="03-bootstrap-autotrigger.html">3·부트스트랩</a>
+  <a href="04-methodology-pipeline.html" class="active">4·파이프라인</a>
+  <a href="05-tdd-everywhere.html">5·TDD</a>
+  <a href="06-subagent-parallelism.html">6·서브에이전트</a>
+  <a href="07-review-verification.html">7·리뷰검증</a>
+  <a href="08-behavior-shaping.html">8·행동형성</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 4</span>
+    <h1>방법론 파이프라인</h1>
+    <p class="subtitle">아이디어가 코드가 되기 전에 반드시 통과해야 하는 세 관문 — brainstorming → writing-plans → executing-plans — 과 각 게이트가 코드 품질을 높이는 구체적 이유</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      Superpowers를 쓰면 코드 퀄리티가 오른다는 말을 들을 때, 가장 먼저 드는 의문은 이것이다:
+      <strong>"왜? 스킬 파일 몇 개가 어떻게 결과물의 품질을 바꾸는가?"</strong>
+    </p>
+    <p>
+      답은 스킬의 내용이 아니라 스킬이 강제하는 <em>순서</em>에 있다.
+      Superpowers의 방법론 파이프라인은 세 가지 원칙을 코드를 쓰기 전에 강제한다:
+    </p>
+    <ol>
+      <li><strong>코드 전에 설계 —</strong> brainstorming 스킬의 HARD-GATE가 설계 승인 없이는 구현을 시작할 수 없게 막는다.</li>
+      <li><strong>작고 검증 가능한 단위 —</strong> writing-plans의 bite-sized 태스크 원칙이 2~5분짜리 단계로 작업을 쪼갠다. 각 단계는 독립적으로 테스트되고 커밋된다.</li>
+      <li><strong>빈번한 커밋 —</strong> 각 태스크 끝에 커밋을 명시적으로 요구하며, 이는 되돌아갈 수 있는 체크포인트를 촘촘하게 만든다.</li>
+    </ol>
+    <p>
+      이 세 원칙은 에이전트가 "빠르게 일단 코드를 쏟아내는" 패턴을 차단한다.
+      대부분의 AI 코드 품질 문제는 잘못된 가정을 검증 없이 구현한 데서 온다.
+      파이프라인은 그 가정들을 설계 단계에서 노출시키고, 작은 단위로 쪼개어 각 단계마다 검증을 강제함으로써
+      오류가 누적되기 전에 발견될 수 있게 한다.
+    </p>
+    <div class="callout">
+      <strong>핵심 질문:</strong>
+      "왜 단순한 기능 하나를 만드는 데도 brainstorming 스킬을 써야 하는가?"
+      brainstorming 스킬의 Anti-Pattern 섹션이 이를 직접 답한다 —
+      "Simple" projects are where unexamined assumptions cause the most wasted work.
+      <code>skills/brainstorming/SKILL.md:18</code>
+    </div>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>아키텍처 다이어그램</h2>
+    <p>
+      아래는 아이디어가 검증된 구현물이 되기까지의 전체 파이프라인이다.
+      각 단계 사이에 유저 승인 HARD GATE가 있으며, 게이트를 통과하지 않으면 다음 단계로 진행하지 않는다.
+    </p>
+    <pre class="mermaid">
+flowchart TD
+    IDEA["💡 아이디어"]
+
+    subgraph BS["brainstorming 스킬"]
+        BS1["컨텍스트 탐색\n(파일·커밋·문서)"]
+        BS2["한 번에 한 질문씩\n목적·제약·성공기준"]
+        BS3["2-3가지 접근법 제안\n(트레이드오프 포함)"]
+        BS4["설계 섹션별 제시"]
+        BS5["spec 작성 & 커밋\ndocs/superpowers/specs/"]
+        GATE1{"HARD GATE\n유저 설계 승인?"}
+        BS1 --> BS2 --> BS3 --> BS4 --> GATE1
+        GATE1 -->|"수정 요청"| BS4
+        GATE1 -->|"승인"| BS5
+    end
+
+    subgraph WP["writing-plans 스킬"]
+        WP1["파일 구조 설계\n(책임 분리)"]
+        WP2["bite-sized 태스크\n(2-5분 단위)"]
+        WP3["No Placeholders\n(실제 코드·명령·예상출력)"]
+        WP4["Self-Review\n(spec 커버리지 · placeholder 스캔)"]
+        GATE2{"HARD GATE\n유저 플랜 승인?"}
+        WP1 --> WP2 --> WP3 --> WP4 --> GATE2
+        GATE2 -->|"수정 요청"| WP3
+        GATE2 -->|"승인"| EP_START
+    end
+
+    subgraph EP["executing-plans / SDD"]
+        EP_START["플랜 로드 & 비판적 검토"]
+        EP2["태스크별 실행\n(테스트 작성 → 실패 확인 → 구현 → 통과 확인 → 커밋)"]
+        EP3["블로커 발생 시 즉시 중단\n(추측 금지)"]
+        EP_START --> EP2 --> EP3
+    end
+
+    VERIFY["검증\n(finishing-a-development-branch)"]
+
+    IDEA --> BS1
+    BS5 --> WP1
+    EP3 --> VERIFY
+
+    style GATE1 fill:#7a3300,stroke:#ff8800,color:#fff
+    style GATE2 fill:#7a3300,stroke:#ff8800,color:#fff
+    style VERIFY fill:#1a4a1a,stroke:#4aff4a,color:#fff
+    </pre>
+
+    <p>
+      게이트(주황색 마름모)는 단순한 체크포인트가 아니다.
+      brainstorming의 HARD GATE는 스킬 파일에 명시적으로 선언되어 있어
+      에이전트가 "이 정도는 너무 간단해서 설계가 필요 없다"는 합리화를 차단한다.
+      writing-plans의 게이트는 플랜 완성도(No Placeholders, Self-Review)를 통과해야 열린다.
+    </p>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>1. brainstorming — "너무 간단해" 안티패턴 차단</h3>
+    <p>
+      brainstorming 스킬의 가장 중요한 규칙은 HARD-GATE다.
+      코드·스캐폴딩·구현 액션을 "설계 제시 + 유저 승인" 전에 절대 시작하지 말 것을 강제한다.
+      이것은 "모든 프로젝트에, 지각된 단순함에 관계없이(EVERY project regardless of perceived simplicity)" 적용된다.
+    </p>
+    <p>
+      Anti-Pattern 섹션은 한 걸음 더 나간다: 간단한 프로젝트일수록 검증 없는 가정이 낭비를 만든다고 명시한다.
+      설계 자체가 짧아도 되지만(a few sentences for truly simple projects), 반드시 제시하고 승인을 받아야 한다.
+    </p>
+
+    <p>세 가지 핵심 원칙이 brainstorming을 품질 게이트로 만든다:</p>
+    <ul>
+      <li>
+        <strong>한 번에 한 질문 (One at a time):</strong>
+        복수의 질문을 동시에 던지지 않는다. 한 토픽이 더 탐구가 필요하면 여러 메시지로 나눈다.
+        이 규칙은 유저가 압도되는 것을 막고, 에이전트가 답변을 제대로 이해했는지 확인할 수 있게 한다.
+      </li>
+      <li>
+        <strong>YAGNI 무자비하게 적용:</strong>
+        모든 설계에서 불필요한 기능을 제거한다. 에이전트의 자연스러운 경향 — "이왕 하는 김에 이것도" — 을 명시적으로 차단한다.
+      </li>
+      <li>
+        <strong>2-3 접근법 항상 제안:</strong>
+        단일 해결책을 직접 제시하지 않는다. 트레이드오프와 추천 이유를 포함한 선택지를 먼저 제시해
+        유저가 실제 요구사항과 가장 맞는 방향을 고를 수 있게 한다.
+      </li>
+    </ul>
+
+    <h3>2. writing-plans — zero-context 엔지니어 가정</h3>
+    <p>
+      writing-plans는 플랜을 읽을 엔지니어(혹은 다음 세션의 에이전트)가
+      "우리 코드베이스에 대해 거의 아무것도 모른다"고 가정하고 플랜을 작성하도록 요구한다.
+      이 가정이 플랜의 품질을 결정한다:
+    </p>
+    <ul>
+      <li>
+        <strong>No Placeholders:</strong>
+        "TBD", "TODO", "implement later", "add appropriate error handling" 같은 표현은
+        모두 플랜 실패(plan failures)로 분류된다. 모든 단계는 엔지니어가 실제로 필요한 내용을 담아야 한다 —
+        실제 코드, 실제 명령어, 예상 출력.
+      </li>
+      <li>
+        <strong>Bite-Sized (2-5분) 단위:</strong>
+        "failing test 작성", "실패 확인을 위해 실행", "최소 구현", "통과 확인을 위해 실행", "커밋" —
+        이 다섯 단계가 하나의 TDD 사이클을 이룬다. 각 단계가 독립적이고 검증 가능한 액션이다.
+      </li>
+      <li>
+        <strong>TDD 스텝 명시:</strong>
+        플랜에 테스트 코드를 직접 포함시킨다. "위 내용에 대한 테스트를 작성하세요"라는 표현은 금지다.
+        실제 테스트 함수 코드가 플랜 안에 있어야 한다.
+      </li>
+    </ul>
+
+    <h3>3. 유저 승인 게이트 — 다음 단계 진입 조건</h3>
+    <p>
+      파이프라인에는 두 개의 명시적 유저 승인 게이트가 있다:
+    </p>
+    <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>게이트</th>
+          <th>위치</th>
+          <th>조건</th>
+          <th>실패 시</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>설계 게이트</strong></td>
+          <td>brainstorming → writing-plans 사이</td>
+          <td>spec 작성 + Spec Self-Review + 유저 명시적 승인</td>
+          <td>변경 요청 반영 후 재검토, 승인 전까지 플랜 작성 금지</td>
+        </tr>
+        <tr>
+          <td><strong>플랜 게이트</strong></td>
+          <td>writing-plans → executing-plans 사이</td>
+          <td>No Placeholders 통과 + Self-Review 완료 + 유저 실행 방식 선택</td>
+          <td>플랜 보완 후 재제시, 승인 전까지 코드 실행 금지</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+    <p>
+      두 게이트 모두 "유저가 명시적으로 진행하기 전까지는 다음 단계로 넘어가지 않는다"는 규칙을
+      스킬 파일에 텍스트로 선언해 에이전트 행동을 제약한다.
+      writing-plans는 플랜 완성 후 "Subagent-Driven(권장)" vs "Inline Execution" 중 선택을 명시적으로 묻고,
+      유저의 응답을 기다린다.
+    </p>
+
+    <h3>4. executing-plans — 블로커에서 멈추기</h3>
+    <p>
+      실행 단계에서 품질을 지키는 핵심 규칙은 하나다:
+      블로커(의존성 누락, 테스트 실패, 지시 불명확)를 만나면 즉시 멈추고 물어보는 것.
+      "추측하지 말 것(don't guess)"이 명시적 규칙이다.
+      에이전트가 막힌 상태에서 앞으로 밀어붙이는 것이 기술 부채의 주요 원인이기 때문이다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 발췌 -->
+  <section id="excerpt">
+    <h2>실제 발췌</h2>
+
+    <!-- 발췌 1: brainstorming Checklist -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/brainstorming/SKILL.md:20-32</code> —
+        brainstorming 체크리스트 전체. 9개 항목이 순서대로 실행되어야 한다.
+        특히 2번(visual companion은 선제적 제공 금지)과 3번(질문은 한 번에 하나)이
+        에이전트의 자연스러운 패턴을 명시적으로 역전시키는 지점이다.
+      </figcaption>
+      <pre><code class="language-markdown">## Checklist
+
+You MUST create a task for each of these items and complete them in order:
+
+1. **Explore project context** — check files, docs, recent commits
+2. **Offer the visual companion just-in-time** — NOT upfront. The first time a question would genuinely be clearer shown than described, offer it then (its own message); on approval its browser tab opens for you. If no visual question ever arises, never offer it. See the Visual Companion section below.
+3. **Ask clarifying questions** — one at a time, understand purpose/constraints/success criteria
+4. **Propose 2-3 approaches** — with trade-offs and your recommendation
+5. **Present design** — in sections scaled to their complexity, get user approval after each section
+6. **Write design doc** — save to `docs/superpowers/specs/YYYY-MM-DD-&lt;topic&gt;-design.md` and commit
+7. **Spec self-review** — quick inline check for placeholders, contradictions, ambiguity, scope (see below)
+8. **User reviews written spec** — ask user to review the spec file before proceeding
+9. **Transition to implementation** — invoke writing-plans skill to create implementation plan</code></pre>
+    </figure>
+
+    <!-- 발췌 2: writing-plans No Placeholders -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/writing-plans/SKILL.md:128-136</code> —
+        No Placeholders 섹션. "plan failures"라는 표현으로 분류된 6가지 금지 패턴.
+        "Similar to Task N (repeat the code — the engineer may be reading tasks out of order)"이
+        핵심이다: 플랜은 순서가 보장되지 않는 환경에서도 동작해야 한다는 가정이다.
+      </figcaption>
+      <pre><code class="language-markdown">## No Placeholders
+
+Every step must contain the actual content an engineer needs. These are **plan failures** — never write them:
+- "TBD", "TODO", "implement later", "fill in details"
+- "Add appropriate error handling" / "add validation" / "handle edge cases"
+- "Write tests for the above" (without actual test code)
+- "Similar to Task N" (repeat the code — the engineer may be reading tasks out of order)
+- Steps that describe what to do without showing how (code blocks required for code steps)
+- References to types, functions, or methods not defined in any task</code></pre>
+    </figure>
+
+    <!-- 발췌 3: writing-plans Task Structure -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/writing-plans/SKILL.md:79-127</code> —
+        Task Structure 전체 예시. Files·Interfaces·Step별 체크박스로 구성된 태스크 템플릿.
+        Interfaces 블록의 "Produces" 필드가 특히 중요하다:
+        서브에이전트가 자신의 태스크만 보는 환경에서 이웃 태스크와의 인터페이스를 명시하는 방법이다.
+      </figcaption>
+      <pre><code class="language-markdown">## Task Structure
+
+````markdown
+### Task N: [Component Name]
+
+**Files:**
+- Create: `exact/path/to/file.py`
+- Modify: `exact/path/to/existing.py:123-145`
+- Test: `tests/exact/path/to/test.py`
+
+**Interfaces:**
+- Consumes: [what this task uses from earlier tasks — exact signatures]
+- Produces: [what later tasks rely on — exact function names, parameter
+  and return types. A task's implementer sees only their own task; this
+  block is how they learn the names and types neighboring tasks use.]
+
+- [ ] **Step 1: Write the failing test**
+
+```python
+def test_specific_behavior():
+    result = function(input)
+    assert result == expected
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/path/test.py::test_name -v`
+Expected: FAIL with "function not defined"
+
+- [ ] **Step 3: Write minimal implementation**
+
+```python
+def function(input):
+    return expected
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `pytest tests/path/test.py::test_name -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/path/test.py src/path/file.py
+git commit -m "feat: add specific feature"
+```
+````</code></pre>
+    </figure>
+  </section>
+
+  <!-- 5. 직접 만든다면 -->
+  <section id="diy">
+    <h2>"직접 만든다면" — 3단 관문이 품질의 핵심인 이유</h2>
+
+    <p>
+      Superpowers 방법론 파이프라인을 자신의 워크플로에 적용할 때 가장 중요한 교훈은 하나다:
+      <strong>게이트의 수가 품질의 수준을 결정한다.</strong>
+      게이트가 없으면 에이전트는 (그리고 인간도) 빠른 경로로 달려가
+      가정을 검증하지 않은 채 수백 줄의 코드를 만들어낸다.
+    </p>
+
+    <h3>설계 게이트 — 코드를 쓰기 전에 멈추기</h3>
+    <p>
+      설계 게이트의 핵심은 에이전트가 "이건 너무 간단해서 설계가 필요 없다"고
+      느끼는 바로 그 순간에 발동해야 한다는 것이다.
+      간단한 것일수록 가정이 암묵적이고, 암묵적 가정이 가장 많은 낭비를 만든다.
+      직접 구현할 때도 "무엇을 만드는지 한 문단으로 써보고 승인받기"를 게이트로 삼으면
+      설계 단계에서 80%의 방향 오류를 잡을 수 있다.
+    </p>
+
+    <h3>플랜 게이트 — No Placeholders 강제하기</h3>
+    <p>
+      플랜 게이트는 실행 전 플랜의 완성도를 점검하는 관문이다.
+      실용적인 기준은 하나다: <em>이 플랜을 처음 보는 사람도 아무것도 추측하지 않고 실행할 수 있는가?</em>
+      "적절한 에러 처리 추가", "위의 테스트 작성" 같은 표현이 하나라도 있으면
+      플랜은 미완성이다. 실행자(에이전트 또는 인간)가 구멍을 채우기 위해
+      원래 요구사항과 다른 결정을 내리는 순간 품질이 저하된다.
+    </p>
+
+    <h3>실행 게이트 — 블로커에서 멈추기</h3>
+    <p>
+      실행 중 게이트는 블로커를 만났을 때 앞으로 밀어붙이지 않는 것이다.
+      에이전트의 기본 경향은 막힌 상태에서 "그럴듯한 대안"을 선택하는 것이다.
+      이 대안이 원래 설계와 충돌하면 기술 부채가 쌓인다.
+      executing-plans는 이를 명시적 규칙으로 선언한다:
+      블로커에서 즉시 멈추고, 추측하지 말고, 물어볼 것.
+    </p>
+
+    <div class="callout">
+      <strong>3게이트 적용 요약:</strong>
+      <ol style="margin:0.5em 0 0 1em;">
+        <li><strong>설계 게이트</strong> — "무엇을" 명문화하고 승인받기. 아무리 간단해도 예외 없이.</li>
+        <li><strong>플랜 게이트</strong> — "어떻게"를 No Placeholders 수준으로 구체화하기. 추측 여지 없애기.</li>
+        <li><strong>실행 게이트</strong> — 블로커에서 멈추기. 추측으로 앞으로 가는 것은 진전이 아니다.</li>
+      </ol>
+      이 세 관문이 순서대로 작동할 때, 에이전트의 속도와 인간의 방향성이 결합되어
+      코드 품질이 올라간다.
+    </div>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="03-bootstrap-autotrigger.html">← 이전: 3·부트스트랩</a>
+  <a href="05-tdd-everywhere.html">다음: 5·TDD →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>

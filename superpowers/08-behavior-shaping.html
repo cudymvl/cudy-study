@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Module 8 — 행동 형성 언어 기법 — Superpowers 학습</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
+</head>
+<body>
+
+<nav class="topnav">
+  <a href="index.html">허브</a>
+  <a href="00-overview.html">0·조감도</a>
+  <a href="01-full-workflow.html">1·전체흐름</a>
+  <a href="02-skill-anatomy.html">2·스킬해부</a>
+  <a href="03-bootstrap-autotrigger.html">3·부트스트랩</a>
+  <a href="04-methodology-pipeline.html">4·파이프라인</a>
+  <a href="05-tdd-everywhere.html">5·TDD</a>
+  <a href="06-subagent-parallelism.html">6·서브에이전트</a>
+  <a href="07-review-verification.html">7·리뷰검증</a>
+  <a href="08-behavior-shaping.html" class="active">8·행동형성</a>
+</nav>
+
+<main class="content">
+  <header class="module-head">
+    <span class="badge">Module 8</span>
+    <h1>행동 형성 언어 기법</h1>
+    <p class="subtitle">스킬은 산문이 아니라 행동을 형성하는 코드다 — 같은 정보도 어떻게 쓰느냐가 에이전트 준수율을 바꾼다. Superpowers의 가장 깊은 설계 비밀: EXTREMELY-IMPORTANT 강조, Red Flags 합리화 차단, "your human partner" 용어 선택, dot-graph 구조적 강제, eval 기반 튜닝.</p>
+  </header>
+
+  <!-- 1. 왜 이 개념인가 -->
+  <section id="why">
+    <h2>왜 이 개념인가</h2>
+    <p>
+      Superpowers의 스킬 파일을 처음 보면 마크다운 문서처럼 보인다.
+      그러나 CLAUDE.md는 이를 명시적으로 부정한다:
+      <strong>"Skills are not prose — they are code that shapes agent behavior."</strong>
+      (<code class="src">CLAUDE.md:95</code>)
+      이 한 문장이 이 모듈 전체의 출발점이다.
+    </p>
+    <p>
+      코드는 특정 동작을 유발하도록 설계된다. 변수 이름, 함수 구조, 조건 분기가
+      런타임 동작을 결정하듯, 스킬 파일의 <em>언어 선택·구조·강조</em>가 에이전트의 실제 행동을 결정한다.
+      같은 내용도 어떻게 표현하느냐에 따라 에이전트가 따를 수도, 합리화하며 건너뛸 수도 있다.
+    </p>
+
+    <h3>정보량이 아니라 준수율이 목표다</h3>
+    <p>
+      일반적인 문서는 <em>이해</em>를 목표로 한다: 독자가 개념을 파악하면 성공이다.
+      스킬은 다르다. 에이전트가 지시를 읽고 이해했더라도 실제로 따르지 않으면 실패다.
+      에이전트는 훈련 데이터에 내재된 수많은 회피 패턴("이건 간단하니까", "이건 예외다")을
+      가지고 있다. 스킬 설계의 진짜 문제는 <strong>이 회피 충동을 언어 수준에서 차단</strong>하는 것이다.
+    </p>
+    <p>
+      Superpowers가 오랜 실험과 eval을 통해 수렴한 기법은 다섯 가지다.
+      각각은 독립적으로도 효과적이지만, 결합되면 에이전트가 스킬을 무시하거나
+      합리화하는 경로를 거의 모두 막는다:
+    </p>
+    <ol>
+      <li><strong>강조 프레이밍</strong> — <code>EXTREMELY-IMPORTANT</code>, <code>HARD-GATE</code> 블록</li>
+      <li><strong>합리화 차단</strong> — Red Flags 표: "이 생각이 들면 STOP"</li>
+      <li><strong>용어 선택</strong> — "your human partner"의 의도적 사용</li>
+      <li><strong>구조적 강제</strong> — dot-graph 플로우차트로 의사결정 경로 시각화</li>
+      <li><strong>평가 기반 튜닝</strong> — eval 없이 내용을 바꾸지 않는 원칙</li>
+    </ol>
+
+    <h3>왜 이것이 중요한가: 94% PR 거부율</h3>
+    <p>
+      CLAUDE.md의 첫 번째 문장은 충격적이다: <strong>"This repo has a 94% PR rejection rate."</strong>
+      (<code class="src">CLAUDE.md:7</code>)
+      거의 모든 거부된 PR은 에이전트가 이 가이드라인을 읽지 않거나 따르지 않아서 발생했다.
+      maintainer들은 "slop that's made of lies"라는 코멘트와 함께 몇 시간 내에 PR을 닫았다.
+    </p>
+    <p>
+      이 맥락에서 CLAUDE.md의 기여자 가이드라인은 단순한 규칙 목록이 아니다.
+      그것은 에이전트가 합리화를 통해 품질 기준을 우회하지 못하도록 설계된
+      <em>행동 형성 코드</em>의 실사례다. 어떻게 그 설계가 작동하는지를 이해하면
+      자신의 프롬프트와 에이전트 지시문을 같은 수준으로 설계할 수 있다.
+    </p>
+  </section>
+
+  <!-- 2. 아키텍처 다이어그램 -->
+  <section id="diagram">
+    <h2>행동 형성 기법 분류도</h2>
+    <p>
+      다섯 가지 기법이 각각 어떤 에이전트 회피 패턴을 차단하는지, 그리고 서로 어떻게 연계되는지를
+      보여주는 분류도. 기법은 계층적이다: 강조 프레이밍이 주의를 끌고, 합리화 차단이 회피를 막고,
+      용어가 정렬을 만들고, 구조가 선택지를 제거하고, eval이 전체를 튜닝한다.
+    </p>
+    <pre class="mermaid">
+flowchart TD
+    SKILL["스킬 파일\n(마크다운 텍스트)"]
+
+    subgraph T1["① 강조 프레이밍"]
+        EI["&lt;EXTREMELY-IMPORTANT&gt;\n1% 가능성에도 MUST"]
+        HG["&lt;HARD-GATE&gt;\n절대 금지 경계"]
+    end
+
+    subgraph T2["② 합리화 차단"]
+        RF["Red Flags 표\n'이 생각 = STOP'"]
+        PR["사전 열거된 회피 사고\n12가지 합리화 패턴"]
+    end
+
+    subgraph T3["③ 용어 선택"]
+        HP["'your human partner'\n사용자 → 파트너 관계"]
+        NI["'deliberate, not interchangeable'\n의도적 용어 보호"]
+    end
+
+    subgraph T4["④ 구조적 강제"]
+        DG["dot-graph 플로우차트\n의사결정 경로 명시"]
+        CL["체크리스트 + Todo\n단계 건너뜀 방지"]
+    end
+
+    subgraph T5["⑤ eval 기반 튜닝"]
+        EV["adversarial pressure testing\n다중 세션 검증"]
+        NM["'carefully-tuned content'\n증거 없이 수정 불가"]
+    end
+
+    SKILL --> T1
+    SKILL --> T2
+    SKILL --> T3
+    SKILL --> T4
+    T1 --> T5
+    T2 --> T5
+    T3 --> T5
+    T4 --> T5
+
+    EI --> |"'not negotiable, not optional'"| RF
+    HG --> |"분기 제거"| DG
+    RF --> |"회피 경로 봉쇄"| EV
+    HP --> |"alignment 강화"| NM
+
+    style EI fill:#3a1a00,stroke:#ff8800,color:#fff
+    style HG fill:#3a0000,stroke:#ff4444,color:#fff
+    style RF fill:#001a3a,stroke:#4488ff,color:#fff
+    style PR fill:#001a3a,stroke:#4488ff,color:#fff
+    style HP fill:#002a1a,stroke:#44bb77,color:#fff
+    style DG fill:#1a0033,stroke:#9944ff,color:#fff
+    style EV fill:#1a1a00,stroke:#aaaa00,color:#fff
+    style NM fill:#1a1a00,stroke:#aaaa00,color:#fff
+    </pre>
+    <p>
+      중요한 연결: <code>EXTREMELY-IMPORTANT</code>가 주의를 끌더라도 에이전트는
+      "이건 예외야"라는 합리화를 시도할 수 있다. Red Flags 표는 그 합리화를
+      <em>미리 이름 붙이고 차단</em>한다. 두 기법의 결합이 단독 사용보다 훨씬 강력한 이유다.
+    </p>
+  </section>
+
+  <!-- 3. 핵심 메커니즘 해설 -->
+  <section id="mechanism">
+    <h2>핵심 메커니즘 해설</h2>
+
+    <h3>① 강조 프레이밍: EXTREMELY-IMPORTANT와 HARD-GATE</h3>
+    <p>
+      일반 마크다운의 <code>**굵게**</code>나 <code>## 헤더</code>는 에이전트에게 특별한 신호가 아니다.
+      에이전트는 지시문을 읽을 때 가중치를 부여하는데, 대문자로만 이루어진 XML 유사 태그
+      <code>&lt;EXTREMELY-IMPORTANT&gt;</code>와 <code>&lt;HARD-GATE&gt;</code>는
+      훈련 데이터에서 높은 우선순위 신호로 인식되도록 선택되었다.
+    </p>
+    <p>
+      <code>EXTREMELY-IMPORTANT</code>의 특징적 설계는 <strong>임계값 명시</strong>다.
+      "중요하다"가 아니라 "1% 가능성에도 반드시"라는 구체적 숫자가 에이전트의 애매한 판단 공간을 제거한다
+      (<code class="src">skills/using-superpowers/SKILL.md:11</code>).
+      <code>HARD-GATE</code>는 더 강하다: 특정 행동을 구현보다 앞에 배치하며 "EVERY project regardless of
+      perceived simplicity"라는 예외 차단 구문을 포함한다
+      (<code class="src">skills/brainstorming/SKILL.md:13</code>).
+    </p>
+
+    <h3>② 합리화 차단: Red Flags 표의 설계 원리</h3>
+    <p>
+      에이전트가 스킬을 건너뛰는 가장 흔한 경로는 합리화다.
+      "이건 간단한 질문이야", "맥락을 먼저 파악해야 해", "이 스킬은 과잉이야" —
+      이런 생각들이 스킬 호출을 막는다.
+      Red Flags 표의 핵심 설계는 이 합리화들을 <em>미리 열거</em>하는 것이다.
+    </p>
+    <p>
+      인지과학적으로 이것이 효과적인 이유: 에이전트가 합리화를 생성하려는 순간,
+      이미 그 합리화가 텍스트로 존재하고 "STOP"이라는 판정과 짝지어져 있다.
+      에이전트는 새로운 합리화를 발명하는 대신 기존 패턴 매칭을 수행한다 —
+      그리고 패턴이 매칭되면 STOP이 발동된다.
+      12가지 합리화 패턴을 나열한 것은 단순 반복이 아니라,
+      <strong>각각이 독립적인 회피 경로를 봉쇄</strong>하는 설계다
+      (<code class="src">skills/using-superpowers/SKILL.md:82-99</code>).
+    </p>
+    <p>
+      표 형식 자체도 의도적이다. 산문으로 쓰인 "이런 생각이 들면 멈추세요"보다
+      두 열(생각 | 현실)의 구조적 대비가 에이전트에게 더 명확한 패턴 매칭 신호를 준다.
+    </p>
+
+    <h3>③ 용어 선택: "your human partner"의 의도</h3>
+    <p>
+      CLAUDE.md는 한 곳에서 이 용어를 명시적으로 방어한다:
+      <em>"'your human partner' is deliberate, not interchangeable with 'the user'."</em>
+      (<code class="src">CLAUDE.md:108</code>)
+      "user"는 서비스 소비자다 — 요구사항을 제출하고 결과를 받는 수동적 존재.
+      "human partner"는 협력자다 — 에이전트와 함께 결과에 책임을 지는 능동적 존재.
+    </p>
+    <p>
+      이 차이는 에이전트의 행동 기준선을 바꾼다.
+      "user를 위해 작업한다"는 프레임에서는 결과물을 제출하면 의무가 끝난다.
+      "human partner를 보호한다"는 프레임에서는 낮은 품질의 PR이
+      파트너의 평판을 손상시킨다는 책임감이 생긴다.
+      CLAUDE.md 9번째 줄의 문장이 이를 직접 표현한다:
+      <em>"Submitting a low-quality PR doesn't help them — it wastes the maintainers' time,
+      burns your human partner's reputation."</em>
+      (<code class="src">CLAUDE.md:9</code>)
+    </p>
+
+    <h3>④ 구조적 강제: dot-graph 플로우차트</h3>
+    <p>
+      산문으로 쓰인 절차는 에이전트가 단계를 재배열하거나 건너뛸 여지를 준다.
+      <code>dot</code> 언어로 작성된 방향성 그래프(digraph)는 다르다:
+      노드와 에지가 명시적 선행 조건을 표현한다.
+      "A 다음 B" 산문과 "A → B" 그래프의 차이는, 그래프에서는
+      B로 향하는 화살표가 A에서 출발하는 경우만 존재한다는 것이다.
+    </p>
+    <p>
+      <code>using-superpowers</code>의 <code>skill_flow</code> digraph는
+      다이아몬드(의사결정) → 박스(행동) → 더블서클(상태) 구조로
+      가능한 경로를 모두 명시한다
+      (<code class="src">skills/using-superpowers/SKILL.md:52-80</code>).
+      "definitely not"이라는 라벨이 있는 에지만이 스킬 호출을 건너뛰는 유일한 경로다.
+      이 그래프를 읽은 에이전트는 스킬을 건너뛰려면
+      명시적으로 "definitely not" 판정을 내려야 한다는 것을 안다.
+    </p>
+    <p>
+      체크리스트와 Todo 항목 생성 강제("Has checklist? → Create a todo per item")도
+      같은 원리다. Todo로 생성된 항목은 완료 표시가 되어야 하기 때문에
+      <em>건너뜀이 기록에 남는다</em>. 이것이 구조적 책임 추적이다.
+    </p>
+
+    <h3>⑤ eval 기반 튜닝: 코드처럼 다루는 증거</h3>
+    <p>
+      CLAUDE.md의 "Skills are not prose" 문단은 단순한 선언이 아니라
+      구체적인 워크플로 요구사항을 포함한다:
+      <code>superpowers:writing-skills</code>로 변경 개발 및 테스트,
+      다중 세션에 걸친 adversarial pressure testing,
+      PR에 before/after eval 결과 제출
+      (<code class="src">CLAUDE.md:95-100</code>).
+      특히 "carefully-tuned content(Red Flags tables, rationalization lists, 'human partner' language)를
+      개선 증거 없이 수정하지 말라"는 조항은 이 파일들을 소스 코드와 동등하게 취급한다는 증거다.
+    </p>
+    <p>
+      eval 하네스(<code>superpowers-evals</code>)는 실제 tmux 세션에서 Claude Code / Codex / Gemini CLI를
+      구동하고 LLM 검증자로 스킬 준수율을 평가한다
+      (<code class="src">CLAUDE.md:103-104</code>).
+      이것은 소프트웨어의 회귀 테스트와 구조적으로 동일하다.
+      스킬 파일이 코드라면, eval은 그 코드의 테스트 스위트다.
+    </p>
+  </section>
+
+  <!-- 4. 실제 발췌 -->
+  <section id="excerpt">
+    <h2>실제 발췌</h2>
+
+    <!-- 발췌 1: EXTREMELY-IMPORTANT 블록 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:10-16</code> —
+        <code>EXTREMELY-IMPORTANT</code> 강조 프레이밍 블록 전체. "1% chance"라는 숫자 임계값,
+        "YOU DO NOT HAVE A CHOICE", "cannot rationalize your way out" — 세 문장이 각각
+        임계값·선택지 제거·합리화 차단이라는 서로 다른 설계 목적을 달성한다.
+      </figcaption>
+      <pre><code class="language-markdown">&lt;EXTREMELY-IMPORTANT&gt;
+If you think there is even a 1% chance a skill might apply to what you are doing, you ABSOLUTELY MUST invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional. You cannot rationalize your way out of this.
+&lt;/EXTREMELY-IMPORTANT&gt;</code></pre>
+    </figure>
+
+    <!-- 발췌 2: Red Flags 표 전체 (12행) -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:82-99</code> —
+        Red Flags 합리화 차단 표 전체 (12항목). 헤더부터 마지막 행까지 verbatim.
+        각 행은 독립적인 회피 경로 하나를 봉쇄한다 — 단순 반복이 아니라 각각이
+        다른 상황에서 발생하는 고유한 합리화 패턴이다.
+      </figcaption>
+      <pre><code class="language-markdown">## Red Flags
+
+These thoughts mean STOP—you're rationalizing:
+
+| Thought | Reality |
+|---------|---------|
+| "This is just a simple question" | Questions are tasks. Check for skills. |
+| "I need more context first" | Skill check comes BEFORE clarifying questions. |
+| "Let me explore the codebase first" | Skills tell you HOW to explore. Check first. |
+| "I can check git/files quickly" | Files lack conversation context. Check for skills. |
+| "Let me gather information first" | Skills tell you HOW to gather information. |
+| "This doesn't need a formal skill" | If a skill exists, use it. |
+| "I remember this skill" | Skills evolve. Read current version. |
+| "This doesn't count as a task" | Action = task. Check for skills. |
+| "The skill is overkill" | Simple things become complex. Use it. |
+| "I'll just do this one thing first" | Check BEFORE doing anything. |
+| "This feels productive" | Undisciplined action wastes time. Skills prevent this. |
+| "I know what that means" | Knowing the concept ≠ using the skill. Invoke it. |</code></pre>
+    </figure>
+
+    <!-- 발췌 3: CLAUDE.md "Skills are not prose" 문단 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">CLAUDE.md:95-100</code> —
+        "Skills are not prose — they are code that shapes agent behavior." 문단.
+        변경 워크플로 요구사항 4가지와 "carefully-tuned content" 보호 조항이 스킬 파일을
+        소스 코드와 동등하게 취급한다는 것을 증명한다.
+      </figcaption>
+      <pre><code class="language-markdown">Skills are not prose — they are code that shapes agent behavior. If you modify skill content:
+
+- Use `superpowers:writing-skills` to develop and test changes
+- Run adversarial pressure testing across multiple sessions
+- Show before/after eval results in your PR
+- Do not modify carefully-tuned content (Red Flags tables, rationalization lists, "human partner" language) without evidence the change is an improvement</code></pre>
+    </figure>
+
+    <!-- 발췌 4: using-superpowers dot-graph 플로우차트 -->
+    <figure class="code-ex">
+      <figcaption>
+        <code class="src">skills/using-superpowers/SKILL.md:52-80</code> —
+        <code>skill_flow</code> digraph 전체. 다이아몬드(의사결정) → 박스(행동) → 더블서클(종단 상태)
+        구조로 스킬 호출을 건너뛸 수 있는 유일한 경로("definitely not" 라벨)를 명시한다.
+        산문 절차와 달리 단계 재배열이나 건너뜀이 구조적으로 불가능하다.
+      </figcaption>
+      <pre><code class="language-markdown">```dot
+digraph skill_flow {
+    "User message received" [shape=doublecircle];
+    "About to enter plan mode?" [shape=doublecircle];
+    "Already brainstormed?" [shape=diamond];
+    "Invoke brainstorming skill" [shape=box];
+    "Might any skill apply?" [shape=diamond];
+    "Invoke the skill" [shape=box];
+    "Announce: 'Using [skill] to [purpose]'" [shape=box];
+    "Has checklist?" [shape=diamond];
+    "Create a todo per item" [shape=box];
+    "Follow skill exactly" [shape=box];
+    "Respond (including clarifications)" [shape=doublecircle];
+
+    "About to enter plan mode?" -> "Already brainstormed?";
+    "Already brainstormed?" -> "Invoke brainstorming skill" [label="no"];
+    "Already brainstormed?" -> "Might any skill apply?" [label="yes"];
+    "Invoke brainstorming skill" -> "Might any skill apply?";
+
+    "User message received" -> "Might any skill apply?";
+    "Might any skill apply?" -> "Invoke the skill" [label="yes, even 1%"];
+    "Might any skill apply?" -> "Respond (including clarifications)" [label="definitely not"];
+    "Invoke the skill" -> "Announce: 'Using [skill] to [purpose]'";
+    "Announce: 'Using [skill] to [purpose]'" -> "Has checklist?";
+    "Has checklist?" -> "Create a todo per item" [label="yes"];
+    "Has checklist?" -> "Follow skill exactly" [label="no"];
+    "Create a todo per item" -> "Follow skill exactly";
+}
+```</code></pre>
+    </figure>
+
+  </section>
+
+  <!-- 5. 직접 만든다면 -->
+  <section id="diy">
+    <h2>"직접 만든다면" — 내 프롬프트/CLAUDE.md에 적용할 체크리스트</h2>
+
+    <p>
+      이 다섯 가지 기법은 Superpowers 전용이 아니다.
+      어떤 에이전트 지시문 — CLAUDE.md, system prompt, 스킬 파일 —
+      에도 적용할 수 있다. 아래는 각 기법을 자신의 컨텍스트에 적용할 때의 실천 체크리스트다.
+    </p>
+
+    <h3>합리화 차단 표 설계</h3>
+    <p>
+      Red Flags 표를 복사하는 것이 아니라 <em>자신의 에이전트가 가장 자주 시도하는 회피 패턴</em>을
+      열거해야 한다. 실제 세션 로그를 보고 에이전트가 규칙을 건너뛸 때 한 말을 수집하라.
+      그것이 표의 "Thought" 열 재료다. "Reality" 열에는 그 생각이 왜 틀렸는지 단 한 문장으로 쓴다.
+    </p>
+    <ol>
+      <li>에이전트가 규칙을 어긴 세션을 3-5개 수집한다</li>
+      <li>각 세션에서 어긴 직전의 에이전트 추론을 찾는다</li>
+      <li>그 추론을 "Thought" 열에, 반박을 "Reality" 열에 쓴다</li>
+      <li>표를 지시문의 가장 중요한 규칙 바로 다음에 배치한다</li>
+    </ol>
+
+    <h3>명시적 게이트 설계</h3>
+    <p>
+      HARD-GATE는 단순히 "하지 말라"가 아니다. 핵심은 두 요소다:
+      (1) <strong>금지 행동의 구체적 열거</strong> ("write any code, scaffold any project, take any implementation action"),
+      (2) <strong>예외 없음 선언</strong> ("EVERY project regardless of perceived simplicity").
+      두 요소 중 하나라도 빠지면 에이전트는 틈새를 찾는다.
+    </p>
+    <ol>
+      <li>게이트를 발동해야 하는 조건을 한 문장으로 쓴다</li>
+      <li>게이트가 막아야 할 행동을 모두 열거한다 (포괄적 단어 하나보다 구체적 목록이 낫다)</li>
+      <li>"regardless of [가장 흔한 예외 주장]"을 명시적으로 추가한다</li>
+      <li>게이트 해제 조건을 정확히 명시한다 (누가, 무엇을 했을 때)</li>
+    </ol>
+
+    <h3>일관된 용어 선택과 보호</h3>
+    <p>
+      "your human partner"가 보여주는 것처럼, 용어는 에이전트의 행동 기준선을 설정한다.
+      자신의 지시문에서 <em>반복적으로 사용할 핵심 용어를 미리 선택</em>하고,
+      CLAUDE.md처럼 "이 용어는 의도적이며 [다른 표현]과 교체 불가"라고 명시한다.
+      이것이 용어를 "deliberately chosen design decision"으로 만들고,
+      에이전트나 다른 기여자가 임의로 바꾸는 것을 막는다.
+    </p>
+    <ol>
+      <li>지시문에서 가장 중요한 관계/역할을 나타내는 단어를 선택한다</li>
+      <li>그 단어가 왜 다른 단어와 다른지 한 문장으로 설명한다</li>
+      <li>용어 보호 주석을 지시문 상단이나 기여 가이드에 명시한다</li>
+    </ol>
+
+    <h3>의사결정 경로를 그래프로 명시하기</h3>
+    <p>
+      모든 지시문이 dot-graph를 필요로 하지는 않는다.
+      그러나 <em>분기가 있는 모든 절차</em> — "A인 경우 X, B인 경우 Y" — 는
+      산문보다 그래프가 명확하다. 최소한 의사결정 다이아몬드와 그 결과 행동을
+      시각적으로 표현하면 에이전트가 "혹시 다른 경로가 있을까"를 탐색하는 것을 막는다.
+    </p>
+    <ol>
+      <li>지시문에서 "if / when / unless" 분기를 모두 찾는다</li>
+      <li>각 분기를 노드(의사결정)와 에지(결과)로 변환한다</li>
+      <li>단말 상태(허용되는 종료 조건)를 명시한다</li>
+      <li>루프(되돌아가는 경로)를 라벨과 함께 그린다</li>
+    </ol>
+
+    <h3>eval 없이 "carefully-tuned content" 수정 금지</h3>
+    <p>
+      지시문이 효과적으로 작동하기 시작하면, 그 내용은 <em>코드처럼 보호</em>되어야 한다.
+      "더 자연스럽게", "더 간결하게"라는 이유로 Red Flags 표 항목을 지우거나
+      HARD-GATE 문구를 완화하면 준수율이 떨어질 수 있다.
+      변경 전에 다음 질문에 답하라: 이 변경이 실제로 에이전트 행동을 개선하는가?
+      증거는 무엇인가?
+    </p>
+    <ol>
+      <li>기존에 효과적으로 작동하던 구문을 "carefully-tuned content"로 표시한다</li>
+      <li>수정 전 세션 로그로 기존 동작을 기록한다</li>
+      <li>수정 후 같은 시나리오를 테스트하여 준수율 변화를 확인한다</li>
+      <li>개선이 없으면 수정을 되돌린다</li>
+    </ol>
+
+    <div class="callout">
+      <strong>최종 교훈:</strong>
+      스킬(그리고 모든 에이전트 지시문)의 품질은 얼마나 많은 정보를 담았느냐가 아니라
+      <em>에이전트가 회피할 수 없는 경로를 얼마나 잘 설계했느냐</em>에 달려 있다.
+      같은 규칙도 산문으로 쓰면 합리화로 우회되고,
+      강조·차단·구조·용어의 다층 설계로 쓰면 코드처럼 실행된다.
+      이것이 Superpowers가 94% PR 거부율 환경에서도 에이전트를 신뢰할 수 있게 만드는 방법이다.
+    </div>
+  </section>
+</main>
+
+<nav class="pager">
+  <a href="07-review-verification.html">← 이전: 7·리뷰검증</a>
+  <a href="index.html">다음: 허브로 돌아가기 →</a>
+</nav>
+
+<script>hljs.highlightAll();</script>
+</body>
+</html>
