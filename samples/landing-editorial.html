@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cudy-study — AI 시대 개발자를 위한 학습 허브</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  /* ─── TOKENS ─────────────────────────────────────────────── */
+  :root {
+    --ink:       #1a1814;
+    --ink-2:     #3d3830;
+    --ink-3:     #7a7168;
+    --paper:     #f5f1eb;
+    --paper-2:   #ede9e2;
+    --rule:      #d4cfc6;
+    --accent:    #b5490f;
+    --accent-2:  #e8c49a;
+
+    --serif:     'Newsreader', Georgia, serif;
+    --sans:      'DM Sans', system-ui, sans-serif;
+
+    --measure:   68ch;
+    --gutter:    clamp(1.5rem, 5vw, 4rem);
+    --col:       min(100%, 1120px);
+  }
+
+  /* ─── RESET ──────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 18px; scroll-behavior: smooth; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-weight: 300;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { display: block; max-width: 100%; }
+
+  /* ─── LAYOUT SHELL ───────────────────────────────────────── */
+  .wrap {
+    width: var(--col);
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  /* ─── MASTHEAD ───────────────────────────────────────────── */
+  header {
+    border-bottom: 1px solid var(--rule);
+    padding: 1.25rem 0;
+  }
+  .masthead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .wordmark {
+    font-family: var(--serif);
+    font-size: clamp(1rem, 2vw, 1.125rem);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: var(--ink);
+  }
+  .wordmark span {
+    color: var(--accent);
+    font-style: italic;
+  }
+  .masthead-meta {
+    font-size: 0.72rem;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* ─── HERO ───────────────────────────────────────────────── */
+  .hero {
+    padding-top: clamp(3.5rem, 8vw, 7rem);
+    padding-bottom: clamp(3rem, 6vw, 5.5rem);
+    border-bottom: 1px solid var(--rule);
+  }
+  .hero-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.75rem;
+  }
+  .hero-kicker::before {
+    content: '';
+    display: block;
+    width: 1.5rem;
+    height: 1px;
+    background: var(--accent);
+  }
+  .hero-title {
+    font-family: var(--serif);
+    font-size: clamp(2.8rem, 7vw, 5.5rem);
+    font-weight: 300;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    max-width: 14ch;
+    margin-bottom: 1.75rem;
+  }
+  .hero-title em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .hero-rule {
+    width: 3rem;
+    height: 1px;
+    background: var(--rule);
+    margin-bottom: 1.5rem;
+  }
+  .hero-body {
+    max-width: 52ch;
+    font-size: clamp(1rem, 1.6vw, 1.1rem);
+    color: var(--ink-2);
+    line-height: 1.75;
+  }
+  .hero-body strong {
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .hero-footnote {
+    margin-top: 2.5rem;
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+    font-style: italic;
+    font-family: var(--serif);
+  }
+
+  /* ─── SECTION HEADER ─────────────────────────────────────── */
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--ink);
+    margin-bottom: clamp(2rem, 4vw, 3rem);
+  }
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+  .section-count {
+    font-family: var(--serif);
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--ink-3);
+  }
+
+  /* ─── SERIES GRID ────────────────────────────────────────── */
+  .series-section {
+    padding-block: clamp(3rem, 6vw, 5rem);
+    border-bottom: 1px solid var(--rule);
+  }
+  .series-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+    gap: 2px;
+    background: var(--rule);
+  }
+  .series-card {
+    background: var(--paper);
+    padding: clamp(1.75rem, 3.5vw, 2.75rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    transition: background 0.2s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .series-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .series-card:hover {
+    background: var(--paper-2);
+  }
+  .series-card:hover::after {
+    transform: scaleX(1);
+  }
+  .card-eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-series-no {
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .card-module-count {
+    font-size: 0.68rem;
+    color: var(--ink-3);
+    letter-spacing: 0.06em;
+    padding: 0.2em 0.6em;
+    border: 1px solid var(--rule);
+  }
+  .card-title {
+    font-family: var(--serif);
+    font-size: clamp(1.2rem, 2.2vw, 1.6rem);
+    font-weight: 400;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+    transition: color 0.2s ease;
+  }
+  .series-card:hover .card-title {
+    color: var(--accent);
+  }
+  .card-desc {
+    font-size: 0.85rem;
+    color: var(--ink-3);
+    line-height: 1.65;
+    flex: 1;
+    border-left: 2px solid var(--rule);
+    padding-left: 0.875rem;
+  }
+  .card-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-top: auto;
+    padding-top: 0.5rem;
+  }
+  .card-cta svg {
+    transition: transform 0.2s ease;
+  }
+  .series-card:hover .card-cta svg {
+    transform: translateX(3px);
+  }
+
+  /* ─── METHOD SECTION ─────────────────────────────────────── */
+  .method-section {
+    padding-block: clamp(3rem, 6vw, 5rem);
+    border-bottom: 1px solid var(--rule);
+  }
+  .method-intro {
+    max-width: 52ch;
+    color: var(--ink-2);
+    font-size: 0.95rem;
+    margin-bottom: 2.5rem;
+  }
+  .method-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+    gap: 0;
+    border: 1px solid var(--rule);
+  }
+  .method-step {
+    padding: 1.5rem 1.25rem;
+    border-right: 1px solid var(--rule);
+    position: relative;
+  }
+  .method-step:last-child {
+    border-right: none;
+  }
+  @media (max-width: 700px) {
+    .method-step {
+      border-right: none;
+      border-bottom: 1px solid var(--rule);
+    }
+    .method-step:last-child { border-bottom: none; }
+  }
+  .step-num {
+    font-family: var(--serif);
+    font-size: 2.25rem;
+    font-weight: 300;
+    font-style: italic;
+    color: var(--paper-2);
+    line-height: 1;
+    margin-bottom: 0.75rem;
+    /* ink stroke over the large faint number */
+    -webkit-text-stroke: 1px var(--rule);
+    text-stroke: 1px var(--rule);
+  }
+  .step-title {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    margin-bottom: 0.375rem;
+  }
+  .step-desc {
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    line-height: 1.55;
+  }
+  .step-accent {
+    position: absolute;
+    top: 0; left: 0;
+    width: 2px; height: 2.5rem;
+    background: var(--accent);
+  }
+
+  /* ─── COLOPHON / ABOUT ───────────────────────────────────── */
+  .about-section {
+    padding-block: clamp(2.5rem, 5vw, 4rem);
+    border-bottom: 1px solid var(--rule);
+  }
+  .about-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(2rem, 5vw, 5rem);
+    align-items: start;
+  }
+  @media (max-width: 640px) {
+    .about-grid { grid-template-columns: 1fr; }
+  }
+  .about-pull {
+    font-family: var(--serif);
+    font-size: clamp(1.35rem, 2.5vw, 1.8rem);
+    font-weight: 300;
+    line-height: 1.35;
+    color: var(--ink);
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .about-pull em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  .about-body {
+    font-size: 0.875rem;
+    color: var(--ink-3);
+    line-height: 1.75;
+  }
+  .about-body p + p { margin-top: 1rem; }
+
+  /* ─── FOOTER ─────────────────────────────────────────────── */
+  footer {
+    padding-block: 2rem;
+  }
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .footer-left {
+    font-family: var(--serif);
+    font-size: 0.85rem;
+    color: var(--ink-3);
+    font-style: italic;
+  }
+  .footer-right {
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .footer-divider {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin-bottom: 1.5rem;
+  }
+
+  /* ─── ANIMATIONS ─────────────────────────────────────────── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .hero-kicker  { animation: fadeUp 0.55s ease both; animation-delay: 0.05s; }
+  .hero-title   { animation: fadeUp 0.65s ease both; animation-delay: 0.15s; }
+  .hero-rule    { animation: fadeUp 0.5s  ease both; animation-delay: 0.3s; }
+  .hero-body    { animation: fadeUp 0.6s  ease both; animation-delay: 0.35s; }
+  .hero-footnote{ animation: fadeUp 0.5s  ease both; animation-delay: 0.5s; }
+
+  /* ─── FOCUS / ACCESSIBILITY ──────────────────────────────── */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+  }
+</style>
+</head>
+<body>
+
+<!-- MASTHEAD -->
+<header>
+  <div class="wrap">
+    <div class="masthead">
+      <div class="wordmark">cudy<span>·</span>study</div>
+      <div class="masthead-meta">개인 학습 허브 · 2025–</div>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-kicker">학습 노트</div>
+    <h1 class="hero-title">AI 시대<br>개발자로<br><em>깊이</em> 읽기</h1>
+    <div class="hero-rule"></div>
+    <p class="hero-body">
+      좋은 도구를 사용하는 것과 그 도구를 <strong>이해하는 것</strong>은 다르다.<br>
+      이 허브는 최첨단 AI 개발 도구를 소스 코드 수준에서 해부하고,<br>
+      그 원리를 직접 재현하며 체득하는 기록이다.
+    </p>
+    <p class="hero-footnote">코드를 읽고 · 다이어그램을 그리고 · 손으로 만든다</p>
+  </div>
+</section>
+
+<!-- SERIES -->
+<section class="series-section">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="section-label">학습 시리즈</span>
+      <span class="section-count">Vol. I–II · 각 9개 모듈</span>
+    </div>
+    <div class="series-list">
+
+      <!-- SERIES 01 -->
+      <a href="../openclaude/index.html" class="series-card" aria-label="SERIES 01 — openclaude로 배우는 에이전트 내부 원리">
+        <div class="card-eyebrow">
+          <span class="card-series-no">Series 01</span>
+          <span class="card-module-count">9 modules</span>
+        </div>
+        <h2 class="card-title">openclaude로 배우는<br>에이전트 내부 원리</h2>
+        <p class="card-desc">
+          Claude Code 계열 에이전트 코딩 CLI를 코드 레벨로 분석한다. 에이전트 루프·툴 시스템·컨텍스트 엔지니어링·멀티모델·서브에이전트·확장성·권한 모델까지.
+        </p>
+        <span class="card-cta">
+          읽기 시작
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </a>
+
+      <!-- SERIES 02 -->
+      <a href="../superpowers/index.html" class="series-card" aria-label="SERIES 02 — superpowers로 배우는 에이전트 방법론">
+        <div class="card-eyebrow">
+          <span class="card-series-no">Series 02</span>
+          <span class="card-module-count">9 modules</span>
+        </div>
+        <h2 class="card-title">superpowers로 배우는<br>에이전트 방법론</h2>
+        <p class="card-desc">
+          에이전트가 어떻게 일해야 좋은 코드를 만드는가 — 방법론 레이어. Skill 해부·자동 트리거·brainstorm→plan→execute·TDD·서브에이전트 병렬화·리뷰/검증·행동 형성 언어.
+        </p>
+        <span class="card-cta">
+          읽기 시작
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+<!-- METHOD -->
+<section class="method-section">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="section-label">이 노트의 방법</span>
+      <span class="section-count">5단계 해부 방식</span>
+    </div>
+    <p class="method-intro">
+      각 모듈은 동일한 순서로 전개된다. "왜"에서 출발해 코드 한 줄의 근거까지 추적하는 구조다.
+    </p>
+    <div class="method-steps">
+      <div class="method-step">
+        <div class="step-accent"></div>
+        <div class="step-num">01</div>
+        <div class="step-title">왜</div>
+        <p class="step-desc">이 개념이 왜 필요한가. 해결하는 문제가 무엇인가.</p>
+      </div>
+      <div class="method-step">
+        <div class="step-accent"></div>
+        <div class="step-num">02</div>
+        <div class="step-title">다이어그램</div>
+        <p class="step-desc">구조·흐름·관계를 한 장으로 압축한 시각 모델.</p>
+      </div>
+      <div class="method-step">
+        <div class="step-accent"></div>
+        <div class="step-num">03</div>
+        <div class="step-title">메커니즘</div>
+        <p class="step-desc">내부 작동 원리를 단계별로 분해해 서술한다.</p>
+      </div>
+      <div class="method-step">
+        <div class="step-accent"></div>
+        <div class="step-num">04</div>
+        <div class="step-title">실제 코드</div>
+        <p class="step-desc">파일:라인 인용으로 검증한 소스 레벨 근거.</p>
+      </div>
+      <div class="method-step">
+        <div class="step-accent"></div>
+        <div class="step-num">05</div>
+        <div class="step-title">직접 만든다면</div>
+        <p class="step-desc">같은 기능을 지금 당장 만든다면 어떻게 설계할까.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ABOUT -->
+<section class="about-section">
+  <div class="wrap">
+    <div class="about-grid">
+      <blockquote class="about-pull">
+        도구를 쓰는 사람은 많다.<br>
+        도구를 <em>읽는</em> 사람은 드물다.
+      </blockquote>
+      <div class="about-body">
+        <p>
+          이 허브는 AI 코딩 도구의 소비자가 아니라 제작자의 눈으로 이해하기 위한 개인 스터디다. 오픈소스 에이전트 프레임워크의 실제 코드를 읽고, 설계 결정을 역추적하며, 같은 기능을 직접 구현해 본다.
+        </p>
+        <p>
+          목표는 "어떻게 쓰는가"가 아니라 "왜 이렇게 만들었는가"를 이해하는 것. 그 이해 위에서만 더 나은 도구를 만들 수 있다.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap">
+    <hr class="footer-divider">
+    <div class="footer-inner">
+      <p class="footer-left">cudy·study — 개인 학습 기록</p>
+      <p class="footer-right">코드를 읽고 · 이해하고 · 만든다</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
