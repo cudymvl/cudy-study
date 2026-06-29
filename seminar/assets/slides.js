@@ -7,8 +7,8 @@
      · fixed counter "n / N" + top progress bar
      · URL hash sync (#5) — updates on navigate, restores on load/refresh
      · subtle entrance animation (respects prefers-reduced-motion)
-     · Mermaid: renders ALL diagrams on load so hidden (display:none) slides
-       still have rendered SVG when shown.
+     · Mermaid: lazy-renders diagrams per slide when it becomes visible so
+       hidden (display:none) containers don't produce zero-size SVG.
 
    Pair with assets/slides.css. Markup contract:
      <div class="deck">
@@ -53,7 +53,7 @@
 
     var curEl = counter.querySelector('.cur');
 
-    // --- initialize Mermaid (render all, even hidden) ------------------------
+    // --- initialize Mermaid (startOnLoad:false; lazy-render per slide) -------
     initMermaid();
 
     // --- starting slide from hash (#n, 1-based) ------------------------------
@@ -61,6 +61,8 @@
     if (fromHash != null) current = clamp(fromHash, 0, total - 1);
 
     show(current, /*animate*/ false);
+    // Render diagrams in the initial active slide after it is visible.
+    requestAnimationFrame(function () { renderMermaidIn(slides[current]); });
 
     // --- events --------------------------------------------------------------
     document.addEventListener('keydown', onKey);
@@ -109,6 +111,8 @@
       curEl.textContent = i + 1;
       progress.style.width = (total === 1 ? 100 : (i / (total - 1)) * 100) + '%';
       setHash(i);
+      // Lazy-render Mermaid diagrams now that this slide is visible.
+      requestAnimationFrame(function () { renderMermaidIn(slide); });
     }
 
     function go(i) {
@@ -172,6 +176,10 @@
     // ---------------------------------------------------------- overview mode
     function enterOverview() {
       deck.classList.add('is-overview');
+      // Render any unprocessed diagrams in all slides so thumbnails aren't blank.
+      requestAnimationFrame(function () {
+        slides.forEach(function (s) { renderMermaidIn(s); });
+      });
       // ensure the active slide is visible-marked; scroll into view
       var act = slides[current];
       if (act && act.scrollIntoView) act.scrollIntoView({ block: 'center' });
@@ -186,18 +194,23 @@
       if (typeof window.mermaid === 'undefined') return;
       try {
         window.mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
-        // Render every diagram now, while we can read their text, so that
-        // slides hidden via display:none already contain SVG when revealed.
-        var nodes = Array.prototype.slice.call(document.querySelectorAll('pre.mermaid'));
-        if (typeof window.mermaid.run === 'function') {
-          window.mermaid.run({ nodes: nodes });
-        } else if (typeof window.mermaid.init === 'function') {
-          window.mermaid.init(undefined, nodes);
-        }
+        // Diagrams are lazy-rendered per slide via renderMermaidIn() when
+        // each slide becomes visible — never eagerly on hidden containers.
       } catch (err) {
         // mermaid offline / failed — leave raw text; deck still works
-        if (window.console) console.warn('[slides] mermaid render skipped:', err);
+        if (window.console) console.warn('[slides] mermaid init skipped:', err);
       }
+    }
+
+    function renderMermaidIn(slideEl) {
+      if (!slideEl || typeof window.mermaid === 'undefined') return;
+      var nodes = Array.prototype.slice.call(slideEl.querySelectorAll('pre.mermaid'))
+        .filter(function (n) { return n.getAttribute('data-processed') !== 'true'; });
+      if (!nodes.length) return;
+      try {
+        if (typeof window.mermaid.run === 'function') window.mermaid.run({ nodes: nodes });
+        else if (typeof window.mermaid.init === 'function') window.mermaid.init(undefined, nodes);
+      } catch (err) { if (window.console) console.warn('[slides] mermaid render skipped:', err); }
     }
   }
 })();
