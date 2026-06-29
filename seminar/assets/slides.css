@@ -159,6 +159,10 @@ body {
   inset: 0;
   display: none;                 /* hidden by default */
   flex-direction: column;
+  /* Short slides (title/quote/section) center vertically; tall slides
+     opt into top-anchored fill via .slide--diagram / .slide--code etc.
+     so content can NEVER overflow past the top edge (which body's
+     overflow:hidden would clip and make unreachable). */
   justify-content: center;
   padding: clamp(40px, 6vh, 88px) clamp(40px, 7vw, 120px);
   /* inner content cap so lines stay readable on ultrawide projectors */
@@ -170,6 +174,18 @@ body {
 
 /* A consistent inner column for all slides */
 .slide > * { max-width: 1180px; margin-left: auto; margin-right: auto; width: 100%; }
+
+/* GENERIC TOP-CLIP SAFETY NET
+   For potentially-tall content slides (default bullet, agenda, split) keep
+   vertical centering for short content, but if the content is taller than the
+   viewport let the SLIDE scroll within itself so the top stays reachable —
+   instead of overflowing past the top edge (which body's overflow:hidden
+   would clip and make unreachable). On short slides nothing scrolls.
+   Diagram/code slides handle their own fit via flex-fill above and are
+   intentionally excluded. Title/quote/section/end stay purely centered. */
+.slide:not(.slide--title):not(.slide--quote):not(.slide--section):not(.slide--end):not(.slide--diagram):not(.slide--code) {
+  overflow-y: auto;
+}
 
 /* Entrance animation — orchestrated, single tasteful motion per slide.
    Children with [data-stagger] cascade in. */
@@ -441,9 +457,23 @@ body {
        <figcaption><code class="src">file.ts:42</code> — 설명</figcaption>
      </figure>
 ============================================================================ */
-.slide--code { justify-content: center; }
+/* Top-anchored fill so long code never overflows the top edge:
+   heading is fixed, the code figure absorbs remaining height and
+   scrolls WITHIN its own bounded box. */
+.slide--code { justify-content: flex-start; }
+/* every direct child except the code figure is a fixed-height zone */
+.slide--code > .eyebrow,
+.slide--code > h1,
+.slide--code > h2,
+.slide--code > .lead { flex: 0 0 auto; }
 
 figure.code-ex {
+  flex: 1 1 auto;               /* fill remaining vertical space */
+  min-height: 0;                /* ESSENTIAL: allow shrink so the bounded
+                                   scroll area (the pre) can engage instead
+                                   of overflowing the slide */
+  display: flex;
+  flex-direction: column;
   background: var(--bg-card);
   border: 1px solid var(--border-mid);
   border-radius: var(--radius-card);
@@ -455,6 +485,7 @@ figure.code-ex {
 figure.code-ex::before {
   content: '';
   display: block;
+  flex: 0 0 auto;
   height: 38px;
   background:
     radial-gradient(circle 5px at 22px 19px, #ff5f57 0 5px, transparent 6px),
@@ -466,8 +497,10 @@ figure.code-ex::before {
 figure.code-ex pre {
   margin: 0;
   padding: clamp(20px, 2.4vw, 32px) clamp(22px, 2.6vw, 36px);
-  overflow: auto;
-  max-height: 56vh;
+  flex: 1 1 auto;               /* fill space between header bar & caption */
+  min-height: 0;                /* ESSENTIAL: enables bounded inner scroll
+                                   instead of pushing the figure past the slide */
+  overflow: auto;               /* long code scrolls within this box */
 }
 /* let highlight.js github-dark own token colors; we only style the container */
 figure.code-ex pre code {
@@ -478,6 +511,7 @@ figure.code-ex pre code {
   letter-spacing: -0.01em;
 }
 figure.code-ex figcaption {
+  flex: 0 0 auto;               /* caption always visible at the bottom */
   padding: 14px clamp(22px, 2.6vw, 36px);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-surface);
@@ -508,9 +542,20 @@ figure.code-ex figcaption code.src {
 /* ============================================================================
    .slide--diagram  — Mermaid
 ============================================================================ */
-.slide--diagram { justify-content: center; }
-.slide--diagram h2 { text-align: center; margin-bottom: 28px; }
+/* Top-anchored fill: children lay out top->bottom and the diagram box
+   absorbs the remaining height, so nothing is ever pushed off the top.
+   The inner column (.slide > *) participates in the flex flow. */
+.slide--diagram { justify-content: flex-start; }
+.slide--diagram h2 {
+  flex: 0 0 auto;               /* fixed-height heading zone */
+  text-align: center;
+  margin-bottom: 28px;
+}
 .slide--diagram pre.mermaid {
+  flex: 1 1 auto;               /* absorbs all remaining vertical space */
+  min-height: 0;                /* ESSENTIAL: lets this flex child shrink
+                                   below content size so a tall SVG can never
+                                   push the heading off-screen */
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
@@ -519,12 +564,18 @@ figure.code-ex figcaption code.src {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 40vh;
-  max-height: 64vh;
-  overflow: auto;
+  overflow: hidden;             /* SVG is scaled to fit; no scroll needed */
 }
-.slide--diagram pre.mermaid svg { max-width: 100%; max-height: 52vh; width: auto; height: auto; }
+/* Mermaid emits inline style="max-width:NNNpx" on the SVG, so we must use
+   !important to win and let the SVG scale down on BOTH axes (aspect kept). */
+.slide--diagram pre.mermaid svg {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  width: auto !important;
+  height: auto !important;
+}
 .slide--diagram .diagram-caption {
+  flex: 0 0 auto;               /* fixed-height caption zone, always visible */
   text-align: center;
   font-size: var(--fs-small);
   color: var(--text-muted);
