@@ -699,12 +699,42 @@
     .series-card {
       padding: 28px;
     }
+
+    /* nav: tighter on mobile */
+    .nav-inner {
+      padding: 0 16px;
+      height: 52px;
+    }
+
+    /* hero: less top padding on tablet */
+    .hero { padding: 100px 0 64px; }
   }
 
   @media (max-width: 480px) {
-    .hero { padding: 80px 0 64px; }
+    .hero { padding: 72px 0 48px; }
     .hero-stats { flex-direction: column; gap: 16px; }
     .stat-divider { display: none; }
+
+    /* nav: minimal padding on small phones, hide badge if it crowds */
+    .nav-inner { padding: 0 12px; height: 48px; }
+    .nav-logo { font-size: 15px; }
+    .nav-badge { display: none; }
+
+    /* site-wrap: tighter horizontal padding */
+    .site-wrap { padding: 0 16px; }
+
+    /* hero title: clamp already handles vw scaling, no change needed */
+    /* hero sub: allow it to be full-width */
+    .hero-sub { max-width: 100%; }
+
+    /* section header: less top margin */
+    .section-header { margin: 56px 0 36px; }
+
+    /* series card: tighter padding */
+    .series-card { padding: 22px; }
+
+    /* method section: less padding */
+    .method-section { padding: 48px 0; }
   }
 
   /* ============================================================

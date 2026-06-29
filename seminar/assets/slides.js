@@ -68,6 +68,34 @@
     document.addEventListener('keydown', onKey);
     window.addEventListener('hashchange', onHashChange);
 
+    // --- touch swipe navigation ----------------------------------------------
+    // Horizontal swipe left → next, right → prev.
+    // Ignores mostly-vertical swipes so scrollable slides still scroll.
+    // Uses passive listeners to avoid blocking the browser's scroll pipeline.
+    var touchStartX = 0;
+    var touchStartY = 0;
+    var SWIPE_THRESHOLD = 45;     // minimum horizontal distance (px)
+    var AXIS_LOCK_RATIO = 1.2;    // |dx| must be this times |dy| to count as horizontal
+
+    deck.addEventListener('touchstart', function (e) {
+      var t = e.changedTouches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+    }, { passive: true });
+
+    deck.addEventListener('touchend', function (e) {
+      // Skip during overview — the grid layout scrolls, not the deck
+      if (deck.classList.contains('is-overview')) return;
+      var t = e.changedTouches[0];
+      var dx = t.clientX - touchStartX;
+      var dy = t.clientY - touchStartY;
+      // Ignore if gesture is too short or too vertical
+      if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+      if (Math.abs(dx) < Math.abs(dy) * AXIS_LOCK_RATIO) return;
+      if (dx < 0) next();   // swipe left  → next slide
+      else        prev();   // swipe right → previous slide
+    }, { passive: true });
+
     // overview: click a thumbnail to jump
     deck.addEventListener('click', function (e) {
       if (!deck.classList.contains('is-overview')) return;

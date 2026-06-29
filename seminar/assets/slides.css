@@ -803,6 +803,140 @@ figure.code-ex figcaption code.src {
 }
 
 /* ============================================================================
+   MOBILE — 768px and below (phones portrait / small tablets)
+============================================================================ */
+@media (max-width: 768px) {
+  /* prevent any horizontal scrollbar on the page */
+  body { overflow-x: hidden; }
+
+  /* tighter slide padding on small screens */
+  .slide {
+    padding: clamp(20px, 4vh, 40px) clamp(18px, 5vw, 28px);
+  }
+
+  /* inner column must never force overflow — let it fill the available width */
+  .slide > * { max-width: 100%; }
+
+  /* stack two-column splits vertically */
+  .slide--split .split {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* code slides — ensure pre scrolls both axes and doesn't blow layout */
+  figure.code-ex pre {
+    overflow: auto;
+    overflow-x: auto;
+    overflow-y: auto;
+  }
+  figure.code-ex pre code {
+    font-size: clamp(12px, 3vw, 16px);
+    white-space: pre;           /* keep code indentation; horizontal scroll handles long lines */
+  }
+
+  /* diagram slides — shrink padding so diagram gets more room */
+  .slide--diagram pre.mermaid {
+    padding: clamp(12px, 2vw, 20px);
+  }
+
+  /* agenda items — allow wrap on very long titles */
+  .slide--agenda ol.agenda > li {
+    flex-wrap: wrap;
+    gap: 8px 22px;
+  }
+
+  /* section slide big number — allow it to wrap/shrink gracefully */
+  .slide--section .section-num {
+    font-size: clamp(64px, 18vw, 160px);
+    word-break: break-all;
+  }
+  .slide--section .section-name { word-break: keep-all; }
+
+  /* title slide — prevent deck-title overflow */
+  .slide--title .deck-title {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  /* quote mark — scale down on mobile */
+  .slide--quote .quote-mark {
+    font-size: clamp(52px, 12vw, 100px);
+  }
+
+  /* counter — slightly smaller, stays bottom-right */
+  .deck-counter {
+    font-size: 12px;
+    padding: 5px 11px;
+    bottom: 14px;
+    right: 14px;
+  }
+
+  /* progress bar stays as-is (3px top stripe — fine on mobile) */
+}
+
+/* ============================================================================
+   MOBILE — 480px and below (compact phones)
+============================================================================ */
+@media (max-width: 480px) {
+  /* type scale overrides: lower the bottom of each clamp so headings
+     don't overflow narrow screens */
+  :root {
+    --fs-display: clamp(36px, 10vw, 104px);
+    --fs-h1:      clamp(26px, 6.5vw, 62px);
+    --fs-h2:      clamp(20px, 5vw, 40px);
+    --fs-lead:    clamp(16px, 4vw, 30px);
+    --fs-body:    clamp(14px, 3.5vw, 26px);
+    --fs-small:   clamp(11px, 2.8vw, 18px);
+  }
+
+  /* even tighter padding */
+  .slide {
+    padding: clamp(16px, 3vh, 28px) clamp(14px, 4vw, 20px);
+  }
+
+  /* section number: smaller floor so it stays on-screen */
+  .slide--section .section-num {
+    font-size: clamp(48px, 16vw, 120px);
+  }
+
+  /* title subtitle: allow wrapping */
+  .slide--title .deck-subtitle {
+    max-width: 100%;
+    word-break: keep-all;
+  }
+
+  /* end slide heading */
+  .slide--end h1 {
+    font-size: clamp(32px, 9vw, 80px);
+  }
+
+  /* quote blockquote */
+  .slide--quote blockquote {
+    max-width: 100%;
+    font-size: clamp(22px, 5.5vw, 48px);
+  }
+
+  /* agenda note: push to new line on very narrow */
+  .slide--agenda ol.agenda > li .agenda-note {
+    margin-left: 0;
+  }
+
+  /* code: mono font smaller floor */
+  figure.code-ex pre code {
+    font-size: clamp(11px, 2.6vw, 14px);
+  }
+
+  /* counter stays compact */
+  .deck-counter {
+    font-size: 11px;
+    padding: 4px 9px;
+    bottom: 10px;
+    right: 10px;
+  }
+}
+
+/* ============================================================================
    REDUCED MOTION — disable all non-essential animation
 ============================================================================ */
 @media (prefers-reduced-motion: reduce) {
