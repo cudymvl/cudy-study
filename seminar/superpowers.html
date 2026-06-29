@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>superpowers로 배우는 에이전트 방법론 · cudy-study</title>
+
+  <!-- Fonts: Sora (display) + Noto Sans KR (body) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Deck styles -->
+  <link rel="stylesheet" href="assets/slides.css">
+
+  <!-- highlight.js 11.9.0 + github-dark (code syntax) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Mermaid 10 (diagrams) — initialized by slides.js (renders all on load) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+
+<body>
+
+<!-- Ambient background (aurora blobs + masked grid). Decorative only. -->
+<div class="deck-bg" aria-hidden="true"></div>
+<div class="deck-grid" aria-hidden="true"></div>
+
+<!-- ============================== DECK ============================== -->
+<div class="deck">
+  <div class="deck-stage">
+
+    <!-- ░░░░░░░░░░ 1 · TITLE ░░░░░░░░░░ -->
+    <section class="slide slide--title">
+      <span class="eyebrow">cudy-study · tech seminar</span>
+      <h1 class="deck-title">superpowers로 배우는<br><span class="grad">에이전트 방법론</span></h1>
+      <p class="deck-subtitle">런타임 위에 올라가는 독립된 방법론 레이어 — 에이전트가 어떤 절차로 생각하고 행동해야 좋은 코드를 만드는가</p>
+      <p class="presenter"><span class="dot" aria-hidden="true"></span> 발표: cudy · 2026</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 2 · AGENDA ░░░░░░░░░░ -->
+    <section class="slide slide--agenda">
+      <span class="eyebrow">목차</span>
+      <h1>9개 모듈, 하나의 질문</h1>
+      <ol class="agenda">
+        <li>왜 방법론 레이어인가 <span class="agenda-note">프레이밍</span></li>
+        <li>전체 조감도 <span class="agenda-note">Module 0</span></li>
+        <li>"Let's build X"의 전체 흐름 <span class="agenda-note">Module 1</span></li>
+        <li>스킬 해부학 <span class="agenda-note">Module 2</span></li>
+        <li>부트스트랩 &amp; 자동 트리거 <span class="agenda-note">Module 3</span></li>
+        <li>방법론 파이프라인 <span class="agenda-note">Module 4</span></li>
+        <li>모든 것에 TDD <span class="agenda-note">Module 5</span></li>
+        <li>서브에이전트 주도 개발 <span class="agenda-note">Module 6</span></li>
+        <li>리뷰 &amp; 검증 루프 <span class="agenda-note">Module 7</span></li>
+        <li>행동 형성 언어 기법 <span class="agenda-note">Module 8</span></li>
+      </ol>
+    </section>
+
+    <!-- ░░░░░░░░░░ 3 · FRAMING ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">프레이밍</span>
+      <h1>왜 방법론 레이어인가</h1>
+      <p class="lead">런타임이 "어떻게 API를 호출하는가"라면, 방법론 레이어는 "에이전트가 어떤 절차로 생각해야 하는가"다.</p>
+      <ul class="bullets">
+        <li>Claude Code, Codex, Gemini CLI — 런타임은 달라도 <strong>방법론은 동일하게 동작</strong></li>
+        <li>스킬 파일(.md)이 런타임과 독립 — 11개 하니스에서 그대로 읽힌다</li>
+        <li>사용자 관점: "설치만 하면 알아서 발동"</li>
+        <li>빌더 관점: 네 개의 명확한 레이어가 협력한다
+          <ul>
+            <li>부트스트랩 훅 → 라우터 스킬 → 스킬 라이브러리 → 방법론 파이프라인</li>
+          </ul>
+        </li>
+        <li><strong>핵심 통찰:</strong> Superpowers는 "툴 설치"가 아니라 <em>에이전트의 의사결정 구조를 덮어쓰는 방법론 주입</em></li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 4 · SECTION 0 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">00</div>
+      <div class="section-name">전체 조감도</div>
+      <p class="section-desc">4레이어 구조 — "부품이 어디에 있는지" 지도부터 읽어야 깊이 파고들 수 있다</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 5 · MODULE 0 DIAGRAM ░░░░░░░░░░ -->
+    <section class="slide slide--diagram">
+      <h2>4레이어 아키텍처</h2>
+      <pre class="mermaid">
+flowchart TD
+    HARNESS["멀티 하니스 — Claude Code · Codex · Gemini CLI · Cursor · …"]
+
+    subgraph L1["Layer 1 — 부트스트랩 훅"]
+      H["SessionStart 훅<br/>hooks/session-start"]
+    end
+
+    subgraph L2["Layer 2 — 라우터 스킬"]
+      U["using-superpowers<br/>skills/using-superpowers/SKILL.md"]
+    end
+
+    subgraph L3["Layer 3 — 스킬 라이브러리"]
+      direction LR
+      B["brainstorming"] --- WP["writing-plans"] --- SDD["subagent-driven-dev"]
+      TDD["test-driven-development"] --- VBC["verification-before-completion"] --- FDB["finishing-branch"]
+    end
+
+    subgraph L4["Layer 4 — 방법론 파이프라인"]
+      P1["아이디어"] --> P2["스펙"] --> P3["플랜"] --> P4["실행"] --> P5["검증"]
+    end
+
+    HARNESS -->|"세션 시작"| H
+    H -->|"SKILL.md를 additionalContext로 주입"| U
+    U -->|"1% 규칙"| L3
+    L3 --> L4
+
+    classDef layer1 fill:#1e3a5f,stroke:#4a9eff,color:#e0f0ff
+    classDef layer2 fill:#3a1e5f,stroke:#9a4aff,color:#f0e0ff
+    classDef layer3 fill:#1e5f3a,stroke:#4aff9a,color:#e0ffe8
+    classDef layer4 fill:#5f3a1e,stroke:#ff9a4a,color:#fff0e0
+    class H layer1
+    class U layer2
+    class B,WP,SDD,TDD,VBC,FDB layer3
+    class P1,P2,P3,P4,P5 layer4
+      </pre>
+      <p class="diagram-caption">00-overview.html — 훅이 없으면 스킬은 디스크에만 존재하는 죽은 파일</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 6 · SECTION 1 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">01</div>
+      <div class="section-name">"Let's build X"의 전체 흐름</div>
+      <p class="section-desc">스킬들이 자동으로 연쇄되는 방식 — 각 스킬은 자신이 끝날 때 반드시 다음 스킬을 명시적으로 호출한다</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 7 · MODULE 1 CONTENT ░░░░░░░░░░ -->
+    <section class="slide slide--split">
+      <span class="eyebrow">Module 1 · 전체 흐름</span>
+      <h1>상태 기계로서의 파이프라인</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">Terminal State 규칙</span>
+          <h2>출구는 하나뿐</h2>
+          <p><code>brainstorming</code>이 끝나면 <strong>writing-plans만</strong> 호출 가능. frontend-design·mcp-builder 등 구현 스킬 직접 호출 금지.</p>
+          <p>에이전트가 "이번엔 간단하니까"라고 합리화하는 경로를 원천 차단한다.</p>
+        </div>
+        <div class="col card">
+          <span class="col-label">수용 테스트 (Acceptance Test)</span>
+          <h2>"Let's make a react todo list"</h2>
+          <p>이 한 마디에 에이전트가 <strong>코드 대신 brainstorming을 먼저 발동</strong>하면 — Superpowers가 제대로 동작한다는 증거.</p>
+          <p>발동하지 않으면 통합 실패.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░░░░░░░░░ 8 · MODULE 1 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 1 · Terminal State</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">**The terminal state is invoking writing-plans.**
+Do NOT invoke frontend-design, mcp-builder,
+or any other implementation skill.
+The ONLY skill you invoke after brainstorming
+is writing-plans.</code></pre>
+        <figcaption><code class="src">skills/brainstorming/SKILL.md:61</code> — 출구를 하나로 제한하는 상태 기계 설계</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 9 · SECTION 2 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">02</div>
+      <div class="section-name">스킬 해부학</div>
+      <p class="section-desc">SKILL.md 구조, frontmatter 규칙, 스킬 3종(Technique / Pattern / Reference) — 스킬이 Superpowers의 원자인 이유</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 10 · MODULE 2 CONTENT ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 2 · 스킬 해부학</span>
+      <h1>description이 트리거 신호다</h1>
+      <p class="lead">에이전트는 스킬 본문을 모두 읽지 않는다. <code>description</code>만 먼저 스캔해 로드 여부를 결정한다.</p>
+      <ul class="bullets">
+        <li><strong>name</strong> — 문자·숫자·하이픈만. 괄호·특수문자 금지</li>
+        <li><strong>description</strong> — "Use when…"으로 시작. <em>워크플로 요약 금지</em>
+          <ul>
+            <li>요약이 들어가면 에이전트가 본문을 건너뛰는 "shortcut"이 생긴다</li>
+          </ul>
+        </li>
+        <li><strong>스킬 3종:</strong> Technique(단계) · Pattern(사고방식) · Reference(API 문서)</li>
+        <li><strong>flat namespace</strong> — <code>skills/</code> 아래 중첩 없이 배치</li>
+        <li>지원 파일은 100줄+ Heavy reference 또는 실행 가능 도구일 때만 분리</li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 11 · MODULE 2 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 2 · Frontmatter 규칙</span>
+      <figure class="code-ex">
+        <pre><code class="language-yaml"># skills/test-driven-development/SKILL.md:1-4
+---
+name: test-driven-development
+description: Use when implementing any feature or bugfix,
+             before writing implementation code
+---
+
+# skills/brainstorming/SKILL.md:1-4
+---
+name: brainstorming
+description: "You MUST use this before any creative work -
+  creating features, building components, adding functionality,
+  or modifying behavior."
+---</code></pre>
+        <figcaption><code class="src">skills/test-driven-development/SKILL.md:1-4</code> · <code class="src">skills/brainstorming/SKILL.md:1-4</code> — 트리거 조건 전용 vs 강제성 언어</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 12 · SECTION 3 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">03</div>
+      <div class="section-name">부트스트랩 &amp; 자동 트리거</div>
+      <p class="section-desc">SessionStart 훅이 using-superpowers를 주입하고, 1% 규칙이 발동을 강제하는 두 층위 메커니즘</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 13 · MODULE 3 DIAGRAM ░░░░░░░░░░ -->
+    <section class="slide slide--diagram">
+      <h2>세션 시작 → 스킬 발동 시퀀스</h2>
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as 사용자/하니스
+    participant H as hooks/session-start
+    participant F as using-superpowers/SKILL.md
+    participant LLM as 에이전트 컨텍스트
+
+    U->>H: 세션 시작 (SessionStart 이벤트)
+    H->>F: SKILL.md 읽기
+    F-->>H: 원문 마크다운 반환
+    H->>H: escape_for_json() 호출
+    H->>LLM: 하니스별 JSON 출력
+    Note over LLM: EXTREMELY_IMPORTANT 블록 수신<br/>1% 규칙 활성화
+    LLM->>LLM: 이후 모든 메시지마다 스킬 체크 강제
+      </pre>
+      <p class="diagram-caption">03-bootstrap-autotrigger.html — matcher: "startup|clear|compact" — 컴팩션 후에도 재주입</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 14 · MODULE 3 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 3 · 1% 규칙</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">&lt;EXTREMELY-IMPORTANT&gt;
+If you think there is even a 1% chance a skill might
+apply to what you are doing, you ABSOLUTELY MUST
+invoke the skill.
+
+IF A SKILL APPLIES TO YOUR TASK, YOU DO NOT HAVE
+A CHOICE. YOU MUST USE IT.
+
+This is not negotiable. This is not optional.
+You cannot rationalize your way out of this.
+&lt;/EXTREMELY-IMPORTANT&gt;</code></pre>
+        <figcaption><code class="src">skills/using-superpowers/SKILL.md:10-16</code> — 자동 트리거의 두 번째 층: 발동 강제</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 15 · SECTION 4 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">04</div>
+      <div class="section-name">방법론 파이프라인</div>
+      <p class="section-desc">아이디어가 코드가 되기 전에 반드시 통과해야 하는 세 관문 — brainstorming → writing-plans → executing-plans</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 16 · MODULE 4 CONTENT ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 4 · 방법론 파이프라인</span>
+      <h1>세 관문이 품질을 결정한다</h1>
+      <p class="lead">게이트의 수가 품질의 수준을 결정한다. 게이트가 없으면 에이전트는 가정을 검증하지 않은 채 수백 줄을 만들어낸다.</p>
+      <ul class="bullets">
+        <li><strong>설계 게이트</strong> — brainstorming HARD-GATE: 승인 전 코드 작성 절대 금지
+          <ul><li>"Simple" projects are where unexamined assumptions cause the most wasted work.</li></ul>
+        </li>
+        <li><strong>플랜 게이트</strong> — No Placeholders: "TBD", "적절한 에러 처리 추가" 전부 plan failures</li>
+        <li><strong>실행 게이트</strong> — 블로커에서 즉시 멈추기. 추측으로 앞으로 가는 것은 진전이 아니다</li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 17 · MODULE 4 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 4 · HARD-GATE</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">&lt;HARD-GATE&gt;
+Do NOT invoke any implementation skill, write any code,
+scaffold any project, or take any implementation action
+until you have presented a design and the user has
+approved it. This applies to EVERY project regardless
+of perceived simplicity.
+&lt;/HARD-GATE&gt;</code></pre>
+        <figcaption><code class="src">skills/brainstorming/SKILL.md:12-14</code> — "regardless of perceived simplicity"가 합리화 차단의 핵심</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 18 · SECTION 5 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">05</div>
+      <div class="section-name">모든 것에 TDD</div>
+      <p class="section-desc">Red-Green-Refactor는 코드에만 적용되지 않는다 — 스킬 문서 작성에도 같은 사이클을 강제하는 메타 TDD</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 19 · MODULE 5 CONTENT ░░░░░░░░░░ -->
+    <section class="slide slide--split">
+      <span class="eyebrow">Module 5 · TDD</span>
+      <h1>TDD의 두 층위</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">코드 TDD</span>
+          <h2>Iron Law</h2>
+          <p><code>NO PRODUCTION CODE WITHOUT A FAILING TEST FIRST</code></p>
+          <p>코드를 먼저 작성했으면? 삭제하고 처음부터. "참조용 유지"도, "적응"도 없다.</p>
+        </div>
+        <div class="col card">
+          <span class="col-label">스킬 TDD (메타)</span>
+          <h2>Writing Skills IS TDD</h2>
+          <p>서브에이전트 압박 시나리오 = 테스트 케이스</p>
+          <p>SKILL.md = 프로덕션 코드</p>
+          <p>에이전트가 스킬 없이 실패하는 것을 보지 않았다면, 스킬이 옳은 것을 가르치는지 알 수 없다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░░░░░░░░░ 20 · MODULE 5 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 5 · TDD Mapping</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">| TDD Concept     | Skill Creation                          |
+|-----------------|----------------------------------------|
+| Test case       | Pressure scenario with subagent        |
+| Production code | Skill document (SKILL.md)              |
+| Test fails (RED)| Agent violates rule without skill      |
+| Test passes (GREEN) | Agent complies with skill present  |
+| Refactor        | Close loopholes while maintaining      |
+| Write test first| Run baseline scenario BEFORE writing   |
+| Watch it fail   | Document exact rationalizations used   |</code></pre>
+        <figcaption><code class="src">skills/writing-skills/SKILL.md:30-45</code> — 코드 TDD를 문서 작성에 1:1 매핑</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 21 · SECTION 6 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">06</div>
+      <div class="section-name">서브에이전트 주도 개발</div>
+      <p class="section-desc">컨텍스트 한계를 위임으로 넘고, 독립 작업을 동시 실행하고, worktree로 충돌을 원천 차단한다</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 22 · MODULE 6 DIAGRAM ░░░░░░░░░░ -->
+    <section class="slide slide--diagram">
+      <h2>SDD — fresh context per task</h2>
+      <pre class="mermaid">
+flowchart LR
+    PLAN["계획 파일"]
+    WORKTREE["git worktree\n격리 워크스페이스"]
+
+    subgraph LOOP["태스크 루프"]
+        IMPL["fresh implementer\n서브에이전트"]
+        REVIEW["task reviewer\nspec + quality"]
+        FIX["fix 서브에이전트\nCritical/Important"]
+        DONE["완료\nprogress.md 기록"]
+
+        IMPL --> REVIEW
+        REVIEW -->|"이슈 발견"| FIX
+        FIX --> REVIEW
+        REVIEW -->|"통과"| DONE
+    end
+
+    PLAN --> WORKTREE --> IMPL
+    DONE -->|"잔여 태스크"| IMPL
+    DONE -->|"완료"| FINAL["final code reviewer\nbranch 전체"]
+
+    style IMPL fill:#003355,stroke:#4488ff,color:#fff
+    style REVIEW fill:#1a1a00,stroke:#aaaa00,color:#fff
+    style FIX fill:#3a0000,stroke:#ff4444,color:#fff
+    style FINAL fill:#220033,stroke:#aa44ff,color:#fff
+      </pre>
+      <p class="diagram-caption">06-subagent-parallelism.html — 에이전트가 몇 시간 자율로 일할 수 있는 구조적 이유</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 23 · MODULE 6 CONTENT ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 6 · 서브에이전트</span>
+      <h1>컨텍스트 분리가 전부다</h1>
+      <p class="lead">서브에이전트는 오케스트레이터의 세션 히스토리를 절대 상속받지 않는다.</p>
+      <ul class="bullets">
+        <li><strong>전달하는 것:</strong> brief 파일 경로 · 이전 태스크 인터페이스 결정 · 글로벌 제약 · 보고서 경로</li>
+        <li><strong>전달하지 않는 것:</strong> 이전 태스크 구현 요약 · 세션 전체 히스토리</li>
+        <li><strong>병렬화 조건:</strong> 각 문제가 다른 루트 원인 · 같은 파일 편집 없음 · 순서 의존 없음</li>
+        <li><strong>한 응답에 여러 dispatch = 병렬 실행</strong>. 응답당 하나 = 순차</li>
+        <li>SDD는 구현 서브에이전트 병렬 dispatch <em>금지</em> — 별도 스킬(dispatching-parallel-agents)의 영역</li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 24 · SECTION 7 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">07</div>
+      <div class="section-name">리뷰 &amp; 검증 루프</div>
+      <p class="section-desc">증거 없는 완료 주장 금지 — 구현 이후의 게이트 루프가 신뢰를 만든다</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 25 · MODULE 7 CONTENT ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 7 · 리뷰 &amp; 검증</span>
+      <h1>증거를 요구하는 구조</h1>
+      <p class="lead">에이전트의 "완료"를 신뢰할 수 있게 만드는 것은 성실함이 아니라 <em>증거를 요구하는 구조</em>다.</p>
+      <ul class="bullets">
+        <li><strong>requesting-code-review</strong> — "Review early, review often": 태스크 완료 후·주요 기능 후·main 머지 전</li>
+        <li><strong>receiving-code-review</strong> — 기술적 평가, 감정적 수행 아님. "You're absolutely right!" 금지</li>
+        <li><strong>verification-before-completion</strong> — Iron Law: <code>NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE</code></li>
+        <li><strong>finishing-a-development-branch</strong> — 테스트 통과 → 환경 감지 → 옵션 제시 → 실행 → 정리</li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 26 · MODULE 7 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 7 · Gate Function</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">NO COMPLETION CLAIMS WITHOUT FRESH VERIFICATION EVIDENCE
+
+## The Gate Function
+
+BEFORE claiming any status or expressing satisfaction:
+
+1. IDENTIFY: What command proves this claim?
+2. RUN: Execute the FULL command (fresh, complete)
+3. READ: Full output, check exit code, count failures
+4. VERIFY: Does output confirm the claim?
+5. ONLY THEN: Make the claim
+
+Skip any step = lying, not verifying</code></pre>
+        <figcaption><code class="src">skills/verification-before-completion/SKILL.md:18-38</code> — 5단계를 하나라도 건너뛰면 검증이 아니라 거짓말</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 27 · SECTION 8 ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">08</div>
+      <div class="section-name">행동 형성 언어 기법</div>
+      <p class="section-desc">스킬은 산문이 아니라 행동을 형성하는 코드다 — 같은 정보도 어떻게 쓰느냐가 에이전트 준수율을 바꾼다</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 28 · MODULE 8 CONTENT ░░░░░░░░░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 8 · 행동 형성</span>
+      <h1>다섯 가지 설계 기법</h1>
+      <p class="lead">94% PR 거부율 환경에서 에이전트를 신뢰할 수 있게 만드는 방법.</p>
+      <ul class="bullets">
+        <li><strong>강조 프레이밍</strong> — <code>EXTREMELY-IMPORTANT</code> · <code>HARD-GATE</code>: 대문자 XML 태그는 훈련 데이터에서 높은 우선순위 신호</li>
+        <li><strong>합리화 차단</strong> — Red Flags 표: 12가지 회피 사고를 미리 이름 붙이고 "STOP" 판정을 미리 짝지음</li>
+        <li><strong>용어 선택</strong> — "your human partner": "user"가 아닌 파트너 → 책임감 기준선이 달라진다</li>
+        <li><strong>구조적 강제</strong> — dot-graph 플로우차트: 건너뜀이 구조적으로 불가능한 의사결정 경로</li>
+        <li><strong>eval 기반 튜닝</strong> — adversarial pressure testing: 스킬 파일 = 소스 코드, eval = 테스트 스위트</li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 29 · MODULE 8 CODE ░░░░░░░░░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 8 · Skills are not prose</span>
+      <figure class="code-ex">
+        <pre><code class="language-markdown">Skills are not prose — they are code that shapes
+agent behavior. If you modify skill content:
+
+- Use `superpowers:writing-skills` to develop
+  and test changes
+- Run adversarial pressure testing across
+  multiple sessions
+- Show before/after eval results in your PR
+- Do not modify carefully-tuned content
+  (Red Flags tables, rationalization lists,
+  "human partner" language) without evidence
+  the change is an improvement</code></pre>
+        <figcaption><code class="src">CLAUDE.md:95-100</code> — 스킬 파일을 소스 코드와 동등하게 취급하는 기여 가이드라인</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 30 · QUOTE ░░░░░░░░░░ -->
+    <section class="slide slide--quote">
+      <div class="quote-mark" aria-hidden="true">"</div>
+      <blockquote>에이전트가 자율적으로 오래 일할 수 있는 것은<br>그 에이전트가 특별히 똑똑해서가 아니다.<br><strong>fresh context · 명확한 brief · 게이트 리뷰</strong> —<br>이 구조가 긴 자율 작업을 가능하게 한다.</blockquote>
+      <cite>06-subagent-parallelism.html — Superpowers의 핵심 인사이트</cite>
+    </section>
+
+    <!-- ░░░░░░░░░░ 31 · CLOSING ░░░░░░░░░░ -->
+    <section class="slide slide--end">
+      <span class="eyebrow">마무리</span>
+      <h1>고맙습니다</h1>
+      <p class="end-summary">
+        Superpowers는 툴이 아니라 방법론이다 —
+        훅이 라우터를 주입하고, 1% 규칙이 발동을 강제하고,
+        상태 기계 파이프라인이 에이전트가 합리화하는 모든 경로를 닫는다.
+        스킬 파일은 산문이 아니라 행동을 형성하는 코드다.
+      </p>
+      <div class="end-links">
+        <a href="../superpowers/index.html">전체 학습 자료 →</a>
+        <a href="index.html">← 세미나 홈</a>
+        <a href="../index.html">cudy-study 홈</a>
+      </div>
+    </section>
+
+  </div><!-- /.deck-stage -->
+</div><!-- /.deck -->
+
+<!-- Syntax highlight after DOM is ready -->
+<script>hljs.highlightAll();</script>
+<!-- Slide engine (nav, counter, progress, hash, overview, mermaid render) -->
+<script src="assets/slides.js"></script>
+
+</body>
+</html>

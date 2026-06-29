@@ -130,3 +130,32 @@ HTML은 클래스만 맞추면 스타일이 자동 적용된다(스타일 변경
 7. `git push` → GitHub Pages가 1~2분 뒤 자동 반영(Pages 재설정 불필요).
 
 > 제작 워크플로우는 superpowers 방식(spec → plan → 서브에이전트 주도 실행 + 모듈별 인용 검증 리뷰)을 권장.
+
+---
+
+## 7. 세미나 슬라이드 덱 포맷 (`seminar/`)
+
+스터디를 발표용으로 옮길 때 쓰는 **HTML 슬라이드 덱** 포맷. 빌드 없이 브라우저로 바로 발표.
+
+```
+seminar/
+├── index.html          # 세미나 랜딩 (덱 카드 목록)
+├── _template.html      # 마크업 계약 데모 — 모든 슬라이드 타입 예시 (새 덱은 이걸 복사)
+├── openclaude.html     # 덱 1
+├── superpowers.html    # 덱 2
+└── assets/
+    ├── slides.css      # 슬라이드 엔진 스타일 (DESIGN.md 토큰 사용)
+    └── slides.js       # 바닐라 JS 엔진
+```
+
+**엔진(slides.js):** `<div class="deck"><section class="slide …">…</section></div>` 구조, 한 번에 1슬라이드.
+네비 `← → / Space / PageUp·Down / Home·End`, `f` 풀스크린, `o` 오버뷰, 진행바 + 카운터, URL 해시 동기화(`#5` 복원).
+`prefers-reduced-motion` 존중. 코드=highlight.js github-dark, 다이어그램=Mermaid@10(dark).
+
+**슬라이드 타입 클래스:** `.slide--title` · `.slide--agenda`(목차) · `.slide--section`(섹션 구분) · `.slide`(불릿) · `.slide--split`(2단) · `.slide--code`(코드+`파일:라인` 캡션) · `.slide--diagram`(Mermaid) · `.slide--quote`(핵심 메시지) · `.slide--end`(마무리/링크).
+
+**덱 흐름(권장, 18~30슬라이드):** 표지 → 목차 → 왜 → (모듈마다 섹션 구분 + 핵심 1슬라이드, 시각/코드 모듈엔 다이어그램·코드 슬라이드) → 핵심 메시지 → 마무리(전체 스터디·홈 링크).
+
+**톤:** 발표용이라 텍스트는 **희소하고 크게**(문서 아님). 코드는 6~14줄로 짧게, 인용은 실제 `파일:라인`.
+
+**새 덱 만들기:** `_template.html` 복사 → `<head>`(폰트·`assets/slides.css`·`assets/slides.js`·Mermaid·hljs) 유지 → 슬라이드 타입 클래스로 내용 채움 → 자산은 상대경로 `assets/...`, 뒤로가기 `../index.html` → `seminar/index.html`에 카드 추가.

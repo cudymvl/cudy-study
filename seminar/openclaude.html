@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>openclaude로 배우는 에이전트 내부 원리 · cudy-study</title>
+
+  <!-- Fonts: Sora (display) + Noto Sans KR (body) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Deck styles -->
+  <link rel="stylesheet" href="assets/slides.css">
+
+  <!-- highlight.js 11.9.0 + github-dark (code syntax) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Mermaid 10 (diagrams) — initialized by slides.js (renders all on load) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+
+<body>
+
+<!-- Ambient background (aurora blobs + masked grid). Decorative only. -->
+<div class="deck-bg" aria-hidden="true"></div>
+<div class="deck-grid" aria-hidden="true"></div>
+
+<!-- ============================== DECK ============================== -->
+<div class="deck">
+  <div class="deck-stage">
+
+    <!-- ░░ 1 · TITLE ░░ -->
+    <section class="slide slide--title">
+      <span class="eyebrow">cudy-study · tech seminar</span>
+      <h1 class="deck-title">openclaude로 배우는<br><span class="grad">에이전트 내부 원리</span></h1>
+      <p class="deck-subtitle">소스코드를 통해 LLM 에이전트가 실제로 어떻게 동작하는지 추적한다</p>
+      <p class="presenter"><span class="dot" aria-hidden="true"></span> 발표: cudy · 2026</p>
+    </section>
+
+    <!-- ░░ 2 · AGENDA ░░ -->
+    <section class="slide slide--agenda">
+      <span class="eyebrow">목차</span>
+      <h1>9개 모듈</h1>
+      <ol class="agenda">
+        <li>전체 아키텍처 조감도 <span class="agenda-note">레이어 분리</span></li>
+        <li>한 턴의 전체 흐름 <span class="agenda-note">타임라인</span></li>
+        <li>에이전트 루프 <span class="agenda-note">while(true) 해부</span></li>
+        <li>툴 시스템 <span class="agenda-note">인터페이스 계약</span></li>
+        <li>컨텍스트 엔지니어링 <span class="agenda-note">토큰 관리</span></li>
+        <li>멀티모델 추상화 <span class="agenda-note">포트·어댑터</span></li>
+        <li>서브에이전트 오케스트레이션 <span class="agenda-note">병렬성</span></li>
+        <li>확장성: MCP · Skills <span class="agenda-note">플러그인</span></li>
+        <li>권한 &amp; 안전장치 <span class="agenda-note">신뢰 게이트</span></li>
+      </ol>
+    </section>
+
+    <!-- ░░ 3 · 왜 이걸 보나 ░░ -->
+    <section class="slide">
+      <span class="eyebrow">동기</span>
+      <h1>사용자에서 빌더로</h1>
+      <p class="lead">에이전트를 <em>쓰는</em> 것과 <em>만드는</em> 것 사이의 간격을 좁히는 시간</p>
+      <ul class="bullets">
+        <li>"그냥 LLM 래퍼 아닌가?" — 실제로는 6개 레이어가 각자 모른다</li>
+        <li>루프, 툴, 컨텍스트, 권한 — 이 네 가지를 모르면 디버깅도 확장도 어렵다</li>
+        <li>openclaude 소스코드는 프로덕션 수준의 에이전트 설계 레퍼런스
+          <ul>
+            <li>실제 코드 인용: 어디서 왔는지 파일·라인 모두 명시</li>
+          </ul>
+        </li>
+        <li>목표: <strong>에이전트 = LLM + 루프 + 도구 + 상태</strong> 를 몸으로 이해하기</li>
+      </ul>
+    </section>
+
+    <!-- ░░ 4 · SECTION 00 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">00</div>
+      <div class="section-name">전체 아키텍처 조감도</div>
+      <p class="section-desc">6개 레이어, 그리고 레이어 사이의 "모름"이 만드는 격벽</p>
+    </section>
+
+    <!-- ░░ 5 · 아키텍처 다이어그램 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>openclaude 레이어 구조</h2>
+      <pre class="mermaid">
+flowchart TD
+    A["CLI 진입점\nsrc/entrypoints/cli.tsx"]
+    B["Bootstrap / STATE 싱글턴\nsrc/bootstrap/state.ts"]
+    C["main.tsx — 초기화 오케스트레이터"]
+    D["QueryEngine — 에이전트 루프\nsrc/QueryEngine.ts"]
+
+    subgraph TOOLS["툴 레지스트리  src/tools/"]
+      T1["BashTool · FileReadTool · FileEditTool …"]
+      T2["AgentTool (재귀)"]
+    end
+
+    subgraph SVC["서비스 레이어  src/services/"]
+      P1["Anthropic SDK · 멀티모델"]
+      P2["MCP 클라이언트"]
+      P3["컨텍스트 압축 · 권한"]
+    end
+
+    UI["Ink UI  src/components/"]
+
+    A -->|"동적 import"| B
+    A -->|"await main()"| C
+    C -->|"getTools() 주입"| D
+    D -->|"tool.call()"| TOOLS
+    D -->|"query() 스트리밍"| SVC
+    C -->|"renderAndRun"| UI
+    UI -->|"submitMessage()"| D
+      </pre>
+      <p class="diagram-caption">핵심: 각 레이어는 인접한 레이어만 안다. QueryEngine은 툴이 무엇인지 모른다.</p>
+    </section>
+
+    <!-- ░░ 6 · 아키텍처 KEY IDEA ░░ -->
+    <section class="slide slide--split">
+      <span class="eyebrow">Module 0 · 핵심 통찰</span>
+      <h1>분리의 원칙</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">레이어가 "모르는" 것</span>
+          <h2>의존성 역전</h2>
+          <p>QueryEngine은 툴이 무엇인지 모른다.<br>
+          <code>QueryEngineConfig</code>로 주입받은 배열만 호출할 뿐이다.</p>
+          <p>이 덕분에 SDK 경로와 REPL 경로가 같은 엔진을 공유한다.</p>
+        </div>
+        <div class="col card">
+          <span class="col-label">Bootstrap 설계</span>
+          <h2>import DAG의 leaf</h2>
+          <p><code>state.ts</code>는 다른 src 파일을 절대 임포트하지 않는다.</p>
+          <p>모든 레이어가 순환 없이 STATE를 읽을 수 있는 이유.</p>
+          <p><span class="muted">주석: "DO NOT ADD MORE STATE HERE"</span></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░ 7 · SECTION 01 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">01</div>
+      <div class="section-name">한 턴의 전체 흐름</div>
+      <p class="section-desc">엔터를 누른 순간부터 최종 텍스트가 출력될 때까지</p>
+    </section>
+
+    <!-- ░░ 8 · 한 턴 시퀀스 다이어그램 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>한 턴의 시퀀스</h2>
+      <pre class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant QE as QueryEngine
+    participant QL as queryLoop()
+    participant LLM as Provider API
+    participant T as Tool
+
+    U->>QE: submitMessage(prompt)
+    QE->>QL: query({ messages, systemPrompt })
+
+    loop 스텝 반복
+        QL->>LLM: callModel()
+        LLM-->>QL: stream: text delta
+        LLM-->>QL: stream: tool_use 블록
+        QL->>QL: needsFollowUp = true
+        QL->>T: tool.call(input)
+        T-->>QL: ToolResult
+        QL->>QL: messages = [...msgs, assistantMsg, toolResult]
+    end
+
+    QL-->>QE: reason: completed
+    QE-->>U: yield { type:'result', result: textResult }
+      </pre>
+      <p class="diagram-caption">한 턴 = 1회 submitMessage(). 스텝 = while(true) 이터레이션 1회. 툴 콜마다 스텝이 추가된다.</p>
+    </section>
+
+    <!-- ░░ 9 · 한 턴 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 1 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">// 툴 콜 감지 — needsFollowUp 플래그 세팅
+if (message.type === 'assistant') {
+  assistantMessages.push(message)
+
+  const msgToolUseBlocks = message.message.content.filter(
+    content => content.type === 'tool_use',
+  ) as ToolUseBlock[]
+
+  if (msgToolUseBlocks.length > 0) {
+    toolUseBlocks.push(...msgToolUseBlocks)
+    needsFollowUp = true   // ← 이 플래그가 루프 재진입 결정
+  }
+}</code></pre>
+        <figcaption><code class="src">src/query.ts:1068–1077</code> — 스트리밍 중 tool_use 블록 감지. needsFollowUp이 true면 이 스텝 이후 runTools()가 호출된다.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 10 · SECTION 02 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">02</div>
+      <div class="section-name">에이전트 루프</div>
+      <p class="section-desc">자율 반복의 심장부 — 상태머신, 종료 조건, auto-continuation</p>
+    </section>
+
+    <!-- ░░ 11 · 루프 상태머신 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>루프 상태머신</h2>
+      <pre class="mermaid">
+flowchart TD
+    ENTRY["루프 진입\nwhile(true)"]
+    STREAM["LLM API 스트리밍"]
+    NEEDS_TOOL{"needsFollowUp?"}
+    EXEC_TOOL["runTools() 실행"]
+    MAXTURN{"maxTurns 초과?"}
+    NEXT_ITER["다음 이터레이션\nstate = next, continue"]
+    AUTO_CONT["auto-continuation 검사\nanalyzeContinuationIntent()"]
+    NUDGE{"nudge 필요?"}
+    DONE["루프 종료\nreason: completed"]
+    ABORT["루프 종료\nreason: aborted_*"]
+    MAX_END["루프 종료\nreason: max_turns"]
+
+    ENTRY --> STREAM
+    STREAM --> NEEDS_TOOL
+    NEEDS_TOOL -->|"yes"| EXEC_TOOL
+    NEEDS_TOOL -->|"no"| AUTO_CONT
+    EXEC_TOOL --> MAXTURN
+    MAXTURN -->|"yes"| MAX_END
+    MAXTURN -->|"no"| NEXT_ITER
+    NEXT_ITER --> ENTRY
+    AUTO_CONT --> NUDGE
+    NUDGE -->|"yes"| NEXT_ITER
+    NUDGE -->|"no"| DONE
+    STREAM -->|"abort 신호"| ABORT
+
+    style DONE fill:#1a4731,color:#fff
+    style ABORT fill:#4a1a1a,color:#fff
+    style MAX_END fill:#4a2a1a,color:#fff
+      </pre>
+      <p class="diagram-caption">auto-continuation: LLM이 툴 없이 "이제 X를 하겠다"고만 쓰면 nudge 메시지를 주입하고 재진입. 상한: MAX_CONTINUATION_NUDGES = 20</p>
+    </section>
+
+    <!-- ░░ 12 · 루프 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 2 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">// 툴 결과를 붙여 다음 스텝으로 continue
+const next: State = {
+  messages: [
+    ...messagesForQuery,
+    ...assistantMessages,
+    ...toolResults,       // ← tool_result 메시지가 합쳐진다
+  ],
+  turnCount: nextTurnCount,
+  continuationNudgeCount: 0,
+  transition: { reason: 'next_turn' },
+  // ...
+}
+state = next
+// while (true) 상단으로 돌아가 다음 스텝 시작</code></pre>
+        <figcaption><code class="src">src/query.ts:2232–2248</code> — 툴 결과를 메시지 배열에 합친 뒤 루프 재진입. LLM은 다음 호출에서 전체 대화 기록을 받는다.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 13 · SECTION 03 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">03</div>
+      <div class="section-name">툴 시스템</div>
+      <p class="section-desc">LLM의 유일한 외부 상호작용 통로 — 스키마가 곧 API 문서</p>
+    </section>
+
+    <!-- ░░ 14 · 툴 생명주기 ░░ -->
+    <section class="slide slide--split">
+      <span class="eyebrow">Module 3 · 툴 생명주기</span>
+      <h1>스키마 → 권한 → 실행 → 직렬화</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">Tool 인터페이스 계약</span>
+          <h2>buildTool()</h2>
+          <ul class="bullets">
+            <li><code>inputSchema</code> — Zod 스키마 = LLM의 API 문서</li>
+            <li><code>validateInput()</code> — 의미 검증 (경로 존재, 보안 패턴)</li>
+            <li><code>checkPermissions()</code> — allow / ask / reject</li>
+            <li><code>call()</code> — 실제 I/O</li>
+            <li><code>mapToolResultToToolResultBlockParam()</code> — 직렬화</li>
+          </ul>
+        </div>
+        <div class="col card">
+          <span class="col-label">지연 로딩</span>
+          <h2>ToolSearch</h2>
+          <p>툴이 많으면 스키마만으로 수천 토큰 소비</p>
+          <p><code>shouldDefer: true</code> → 이름만 노출</p>
+          <p>LLM이 쓰려 할 때 ToolSearch 호출 → 풀 스키마 수신</p>
+          <p><span class="muted">알파벳 정렬 → 프롬프트 캐시 안정화</span></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░ 15 · 툴 스키마 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 3 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">// Zod 스키마 = LLM에게 보내는 API 문서
+const inputSchema = lazySchema(() =>
+  z.strictObject({
+    file_path: z.string()
+      .describe('The absolute path to the file to modify'),
+    old_string: z.string()
+      .describe('The text to replace'),
+    new_string: z.string()
+      .describe(
+        'The text to replace it with (must be different from old_string)',
+      ),
+    replace_all: semanticBoolean(
+      z.boolean().default(false).optional(),
+    ).describe('Replace all occurrences of old_string (default false)'),
+  }),
+)</code></pre>
+        <figcaption><code class="src">src/tools/FileEditTool/types.ts:6–20</code> — 각 .describe()가 LLM이 읽는 툴 설명서다. 스키마 품질 = 에이전트 정확도.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 16 · SECTION 04 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">04</div>
+      <div class="section-name">컨텍스트 엔지니어링</div>
+      <p class="section-desc">유한한 컨텍스트 윈도우를 어떻게 관리하는가</p>
+    </section>
+
+    <!-- ░░ 17 · 컨텍스트 관리 다이어그램 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>컨텍스트 관리 — 세 겹의 방어선</h2>
+      <pre class="mermaid">
+flowchart LR
+    A["매 턴\n시작"] --> B["토큰 추정\nbytes / 4"]
+    B --> C{"임계 판정"}
+
+    C -->|"95% 이상\nCollapse 활성"| D["Context Collapse\n스팬만 접기\n→ placeholder 교체"]
+    C -->|"Auto-compact\n임계 초과"| E["세션 메모리\n먼저 시도"]
+    C -->|"정상"| K["API 호출"]
+
+    E -->|"있음"| F["SessionMemory\n파일로 교체"]
+    E -->|"없음"| G["forked agent\n요약 생성"]
+    G --> H["summary +\nattachments 재구성"]
+
+    D --> K
+    F --> K
+    H --> K
+      </pre>
+      <p class="diagram-caption">200k 윈도우 기준: 200k − 20k(요약 예약) − 13k(버퍼) = <strong>167k 토큰</strong>에서 auto-compact 트리거. p99.99 측정값으로 산출.</p>
+    </section>
+
+    <!-- ░░ 18 · 컨텍스트 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 4 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">// 러프 토큰 추정 — API 호출 없이 즉시
+export function roughTokenCountEstimation(
+  content: string,
+  bytesPerToken: number = 4,
+): number {
+  return Math.round(content.length / bytesPerToken)
+}
+
+// JSON은 단일 문자 토큰({, }, :)이 밀집 → bytesPerToken = 2
+export function bytesPerTokenForFileType(fileExtension: string): number {
+  switch (fileExtension) {
+    case 'json':
+    case 'jsonl':
+    case 'jsonc':
+      return 2
+    default:
+      return 4
+  }
+}</code></pre>
+        <figcaption><code class="src">src/services/tokenEstimation.ts:273–294</code> — 임계 판정은 러프 추정, 실제 compact 전에만 정확한 수치. 추정 비용 최소화.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 19 · SECTION 05 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">05</div>
+      <div class="section-name">멀티모델 추상화</div>
+      <p class="section-desc">하나의 루프로 200+ 모델 지원 — 포트/어댑터 패턴</p>
+    </section>
+
+    <!-- ░░ 20 · 멀티모델 ░░ -->
+    <section class="slide slide--split">
+      <span class="eyebrow">Module 5 · 포트/어댑터</span>
+      <h1>루프는 어댑터를 모른다</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">TransportKind — 포트</span>
+          <h2>루프가 아는 것</h2>
+          <ul class="bullets">
+            <li><code>'anthropic-native'</code></li>
+            <li><code>'openai-compatible'</code></li>
+            <li><code>'gemini-native'</code></li>
+            <li><code>'bedrock'</code> / <code>'vertex'</code></li>
+          </ul>
+          <p><span class="muted">새 프로바이더 추가 = 디스크립터 파일 하나</span></p>
+        </div>
+        <div class="col card">
+          <span class="col-label">XML 툴콜 복구 shim</span>
+          <h2>GLM · Qwen 대응</h2>
+          <p>일부 모델은 structured tool_calls 대신 텍스트에 XML을 끼워넣는다</p>
+          <p>3개 방언: function/parameter 태그, GLM arg_key/arg_value, Hermes JSON</p>
+          <p>스트리밍 중 버퍼에 축적 → finalize 시 Anthropic 이벤트로 변환</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░ 21 · SECTION 06 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">06</div>
+      <div class="section-name">서브에이전트 오케스트레이션</div>
+      <p class="section-desc">부모 루프 안에서 자식 루프가 돌아간다</p>
+    </section>
+
+    <!-- ░░ 22 · 서브에이전트 다이어그램 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>서브에이전트 스폰 흐름</h2>
+      <pre class="mermaid">
+sequenceDiagram
+    participant P as 부모 에이전트 루프
+    participant AT as AgentTool.call()
+    participant W1 as Worker 1
+    participant W2 as Worker 2
+
+    P->>AT: Agent({ run_in_background:true, prompt:"..." })
+    AT->>AT: registerAsyncAgent()
+    AT-->>P: { status:"async_launched", agentId:"a1b" }
+
+    P->>AT: Agent({ run_in_background:true, prompt:"..." })
+    AT-->>P: { status:"async_launched", agentId:"x7q" }
+
+    par Worker 1
+        AT->>W1: query() — 새 QueryEngine 루프
+        W1-->>AT: 완료
+        AT->>P: task-notification(a1b, completed)
+    and Worker 2
+        AT->>W2: query() — 새 QueryEngine 루프
+        W2-->>AT: 완료
+        AT->>P: task-notification(x7q, completed)
+    end
+
+    P->>P: 결과 합성
+      </pre>
+      <p class="diagram-caption">서브에이전트 = 또 하나의 QueryEngine 루프. 부모와 분리된 AbortController → ESC를 눌러도 백그라운드 에이전트는 계속 실행.</p>
+    </section>
+
+    <!-- ░░ 23 · 서브에이전트 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 6 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">// 서브에이전트의 query() 루프 — Module 2와 동일한 구조
+for await (const message of query({
+  messages: initialMessages,
+  systemPrompt: agentSystemPrompt,
+  canUseTool,
+  toolUseContext: agentToolUseContext,
+  querySource,
+  maxTurns: maxTurns ?? agentDefinition.maxTurns,
+})) {
+  if (isRecordableMessage(message)) {
+    await recordSidechainTranscript([message], agentId, lastRecordedUuid)
+    yield message
+  }
+}</code></pre>
+        <figcaption><code class="src">src/tools/AgentTool/runAgent.ts:789–847</code> — 부모와 자식이 같은 query() 함수를 사용한다. 재귀가 아닌 함수 재사용.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 24 · SECTION 07 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">07</div>
+      <div class="section-name">확장성: MCP · Skills · 슬래시 커맨드</div>
+      <p class="section-desc">코어를 건드리지 않고 기능을 확장하는 세 가지 축</p>
+    </section>
+
+    <!-- ░░ 25 · 확장성 ░░ -->
+    <section class="slide">
+      <span class="eyebrow">Module 7 · 확장 세 축</span>
+      <h1>런타임 등록</h1>
+      <ul class="bullets">
+        <li><strong>MCP 서버</strong> — JSON-RPC로 외부 프로세스가 툴을 노출
+          <ul>
+            <li>이름 형식: <code>mcp__{server}__{tool}</code></li>
+            <li>기본값: <code>passthrough</code> → 매번 사용자 승인 요청</li>
+          </ul>
+        </li>
+        <li><strong>Skills</strong> — Markdown 파일이 슬래시 커맨드가 된다
+          <ul>
+            <li><code>.claude/skills/*.md</code> → YAML 프런트매터 파싱</li>
+            <li>모델이 <code>SkillTool</code>로 호출 또는 사용자가 <code>/skill</code>로 직접 호출</li>
+          </ul>
+        </li>
+        <li><strong>MCP Skills 보안 가드</strong>
+          <ul>
+            <li><code>hooks: undefined</code> 강제 — 원격 쉘 실행 차단</li>
+            <li><code>allowedTools: []</code> 강제 — 자동 승인 우회 차단</li>
+          </ul>
+        </li>
+      </ul>
+    </section>
+
+    <!-- ░░ 26 · SECTION 08 ░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">08</div>
+      <div class="section-name">권한 &amp; 안전장치</div>
+      <p class="section-desc">자율 에이전트가 파일·셸에 접근할 때 신뢰를 유지하는 방법</p>
+    </section>
+
+    <!-- ░░ 27 · 권한 판정 다이어그램 ░░ -->
+    <section class="slide slide--diagram">
+      <h2>7단계 권한 판정 파이프라인</h2>
+      <pre class="mermaid">
+flowchart LR
+    A["툴 호출\n요청"] --> B["1a. deny 규칙?"]
+    B -->|"매칭"| DENY["차단"]
+    B -->|"없음"| C["1c. tool.checkPermissions()"]
+    C -->|"deny"| DENY
+    C -->|"ask + safetyCheck\n.git/.ssh/.claude"| ASK["사용자 승인\n요청"]
+    C --> D["2a. 모드 확인"]
+    D -->|"bypassPermissions\n또는 fullAccess"| ALLOW["통과"]
+    D -->|"그 외"| E["2b. alwaysAllow 규칙?"]
+    E -->|"매칭"| ALLOW
+    E -->|"없음"| F["passthrough → ask\n다이얼로그"]
+    F -->|"Yes"| ALLOW
+    F -->|"No"| DENY
+
+    style DENY fill:#5f1e1e,stroke:#ff4a4a,color:#ffe0e0
+    style ALLOW fill:#1e5f3a,stroke:#4aff9a,color:#e0ffe8
+    style ASK fill:#1e3a5f,stroke:#4a9eff,color:#e0f0ff
+      </pre>
+      <p class="diagram-caption">모르면 막는다 — passthrough는 ask로 격상. deny 규칙과 safetyCheck는 bypassPermissions에서도 우회 불가.</p>
+    </section>
+
+    <!-- ░░ 28 · 권한 코드 ░░ -->
+    <section class="slide slide--code">
+      <span class="eyebrow">Module 8 · 핵심 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">export const EXTERNAL_PERMISSION_MODES = [
+  'acceptEdits',
+  'bypassPermissions',
+  'default',
+  'dontAsk',
+  'fullAccess',
+  'plan',
+] as const
+
+export type PermissionMode = InternalPermissionMode
+// InternalPermissionMode = ExternalPermissionMode | 'auto' | 'bubble'
+
+export type PermissionBehavior = 'allow' | 'deny' | 'ask'
+
+// passthrough = "나는 모르겠으니 상위로 넘김"
+// → 파이프라인이 ask로 격상시킨다
+export type PermissionResult = PermissionDecision | { behavior: 'passthrough' }</code></pre>
+        <figcaption><code class="src">src/types/permissions.ts:16–45</code> — passthrough가 핵심. 툴이 "모른다"고 말하면 사용자에게 묻는다. Deny-by-default.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░ 29 · QUOTE ░░ -->
+    <section class="slide slide--quote">
+      <div class="quote-mark" aria-hidden="true">"</div>
+      <blockquote>에이전트 = <strong>LLM + 루프 + 도구 실행 + 상태(메시지 배열)</strong><br>
+      이 네 가지 외에 마법은 없다.<br>
+      openclaude는 이 단순한 구조 위에 스트리밍, 권한, 컨텍스트 압축, 다중 모델 폴백을 정교하게 쌓은 것이다.</blockquote>
+      <cite>openclaude Module 1 · "직접 만든다면" 교훈</cite>
+    </section>
+
+    <!-- ░░ 30 · CLOSING ░░ -->
+    <section class="slide slide--end">
+      <span class="eyebrow">마무리</span>
+      <h1>고맙습니다</h1>
+      <p class="end-summary">레이어 분리 · while(true) 루프 · 툴 계약 · 컨텍스트 관리 · 포트/어댑터 · 서브에이전트 · MCP · 권한 게이트 — 이 여덟 가지가 프로덕션 에이전트의 전부입니다.</p>
+      <div class="end-links">
+        <a href="../openclaude/index.html">전체 학습 모듈 →</a>
+        <a href="../index.html">cudy-study 홈</a>
+      </div>
+    </section>
+
+  </div><!-- /.deck-stage -->
+</div><!-- /.deck -->
+
+<!-- Syntax highlight after DOM is ready -->
+<script>hljs.highlightAll();</script>
+<!-- Slide engine (nav, counter, progress, hash, overview, mermaid render) -->
+<script src="assets/slides.js"></script>
+
+</body>
+</html>

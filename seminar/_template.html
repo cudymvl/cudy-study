@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  cudy-study · SLIDE DECK TEMPLATE  (copy this file to author a new deck)
+  ----------------------------------------------------------------------------
+  HOW TO USE
+    1. Copy this file to e.g. seminar/openclaude.html
+    2. Keep the <head> block (fonts + CDNs + assets) as-is.
+    3. Replace the <section class="slide …"> blocks with your content.
+    4. Open the .html file directly in a browser — no build step.
+
+  MARKUP CONTRACT
+    <div class="deck">              ← engine root (exactly one)
+      <section class="slide …">     ← one per slide; engine shows one at a time
+    </div>
+    The engine (assets/slides.js) injects: top progress bar, "n / N" counter,
+    keyboard hint, and the overview bar. Do NOT add those yourself.
+
+  SLIDE TYPES (add the class to a <section class="slide …">)
+    .slide--title     Title / cover         → .deck-title / .deck-subtitle / .presenter
+    .slide--agenda    Agenda / 목차          → <ol class="agenda"> + optional .agenda-note
+    .slide--section   Section divider        → .section-num / .section-name / .section-desc
+    (no modifier)     Bullet content         → .eyebrow + h1 + .lead + <ul class="bullets">
+    .slide--split     Two-column             → <div class="split"><div class="col">…
+    .slide--code      Code card + citation   → <figure class="code-ex"> + <figcaption><code class="src">file:line</code>
+    .slide--diagram   Mermaid diagram        → <pre class="mermaid">…</pre>
+    .slide--quote     Key takeaway / quote   → .quote-mark + <blockquote> + <cite>
+    .slide--end       Closing                → h1 + .end-summary + .end-links
+
+  NAV KEYS  ← / →  ·  Space (next) / Shift+Space (prev)  ·  PageUp / PageDown
+            ·  Home / End  ·  F fullscreen  ·  O overview grid (Esc to close)
+  URL HASH  #5 jumps to slide 5; updates as you navigate; restored on refresh.
+  ============================================================================
+-->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>슬라이드 템플릿 · cudy-study</title>
+
+  <!-- Fonts: Sora (display) + Noto Sans KR (body) + JetBrains Mono (code) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Deck styles -->
+  <link rel="stylesheet" href="assets/slides.css">
+
+  <!-- highlight.js 11.9.0 + github-dark (code syntax) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <!-- Mermaid 10 (diagrams) — initialized by slides.js (renders all on load) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+</head>
+
+<body>
+
+<!-- Ambient background (aurora blobs + masked grid). Decorative only. -->
+<div class="deck-bg" aria-hidden="true"></div>
+<div class="deck-grid" aria-hidden="true"></div>
+
+<!-- ============================== DECK ============================== -->
+<div class="deck">
+  <!-- .deck-stage wraps slides for overview mode; engine relies on it -->
+  <div class="deck-stage">
+
+    <!-- ░░░░░░░░░░ 1 · TITLE ░░░░░░░░░░ .slide--title ░░░░░░░░░░ -->
+    <section class="slide slide--title">
+      <span class="eyebrow">cudy-study · tech seminar</span>
+      <h1 class="deck-title">슬라이드 <span class="grad">덱 템플릿</span></h1>
+      <p class="deck-subtitle">재사용 가능한 발표용 HTML 슬라이드 포맷 — 모든 슬라이드 타입 데모</p>
+      <p class="presenter"><span class="dot" aria-hidden="true"></span> 발표자 · cudy · 2026</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 2 · AGENDA ░░░░░░░░░░ .slide--agenda ░░░░░░░░░░ -->
+    <!-- numbered list auto-counts via CSS counter; .agenda-note is optional right-aligned meta -->
+    <section class="slide slide--agenda">
+      <span class="eyebrow">목차</span>
+      <h1>오늘 다룰 내용</h1>
+      <ol class="agenda">
+        <li>왜 이 포맷인가 <span class="agenda-note">동기</span></li>
+        <li>아키텍처 한눈에 <span class="agenda-note">다이어그램</span></li>
+        <li>핵심 메커니즘 <span class="agenda-note">2단</span></li>
+        <li>실제 코드 <span class="agenda-note">인용</span></li>
+        <li>마무리 <span class="agenda-note">정리</span></li>
+      </ol>
+    </section>
+
+    <!-- ░░░░░░░░░░ 3 · SECTION DIVIDER ░░░░░░░░░░ .slide--section ░░░░░░░░░░ -->
+    <section class="slide slide--section">
+      <div class="section-num">01</div>
+      <div class="section-name">왜 이 포맷인가</div>
+      <p class="section-desc">빌드 스텝 없이, 파일을 열기만 하면 동작하는 발표 시스템</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 4 · BULLET CONTENT ░░░░░░░░░░ (no modifier) ░░░░░░░░░░ -->
+    <!-- heading + .lead + <ul class="bullets">; nest <ul> for sub-points; .muted dims trailing text -->
+    <section class="slide">
+      <span class="eyebrow">동기</span>
+      <h1>담백하고, 이식 가능하게</h1>
+      <p class="lead">슬라이드는 발표장 뒤에서도 읽혀야 한다.</p>
+      <ul class="bullets">
+        <li>큰 타입 스케일 — 투사 환경에서 가독성 우선</li>
+        <li>CDN만 의존 — 폰트·하이라이트·머메이드
+          <ul>
+            <li>오프라인에서도 네비게이션은 동작</li>
+            <li>외부 의존 실패해도 덱은 깨지지 않음</li>
+          </ul>
+        </li>
+        <li>상대경로만 사용 <span class="muted">— 폴더째 옮겨도 안 깨짐</span></li>
+      </ul>
+    </section>
+
+    <!-- ░░░░░░░░░░ 5 · TWO-COLUMN ░░░░░░░░░░ .slide--split ░░░░░░░░░░ -->
+    <!-- wrap columns in .split > .col ; add .card to a .col for a surfaced panel -->
+    <section class="slide slide--split">
+      <span class="eyebrow">핵심 메커니즘</span>
+      <h1>개념과 구현을 나란히</h1>
+      <div class="split">
+        <div class="col card">
+          <span class="col-label">개념</span>
+          <h2>한 번에 한 장</h2>
+          <p>엔진은 <code>.is-active</code> 클래스를 정확히 한 슬라이드에만 둔다. 나머지는 <code>display:none</code>.</p>
+        </div>
+        <div class="col card">
+          <span class="col-label">구현</span>
+          <h2>해시 동기화</h2>
+          <p>네비게이션마다 <code>#n</code> 으로 URL을 갱신하고, 새로고침 시 그 슬라이드를 복원한다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ░░░░░░░░░░ 6 · CODE ░░░░░░░░░░ .slide--code ░░░░░░░░░░ -->
+    <!-- figure.code-ex > pre > code.language-* ; figcaption cites source as <code class="src">file:line</code> -->
+    <section class="slide slide--code">
+      <span class="eyebrow">실제 코드</span>
+      <figure class="code-ex">
+        <pre><code class="language-typescript">function show(i: number, animate: boolean) {
+  slides.forEach((s) =&gt; s.classList.remove('is-active', 'animate-in'));
+  const slide = slides[i];
+  slide.classList.add('is-active');
+  if (animate &amp;&amp; !reduceMotion) {
+    void slide.offsetWidth;          // force reflow → restart anim
+    slide.classList.add('animate-in');
+  }
+  progress.style.width = (i / (total - 1)) * 100 + '%';
+  setHash(i);                        // URL #n sync
+}</code></pre>
+        <figcaption><code class="src">assets/slides.js:108</code> — 슬라이드 전환의 핵심: active 토글 + 진행바 + 해시</figcaption>
+      </figure>
+    </section>
+
+    <!-- ░░░░░░░░░░ 7 · DIAGRAM ░░░░░░░░░░ .slide--diagram ░░░░░░░░░░ -->
+    <!-- pre.mermaid holds raw mermaid syntax; slides.js renders ALL diagrams on load -->
+    <section class="slide slide--diagram">
+      <h2>슬라이드 엔진 흐름</h2>
+      <pre class="mermaid">
+flowchart LR
+  K["키 입력<br/>← / → / Space"] --> N{"방향?"}
+  N -->|다음| INC["current + 1"]
+  N -->|이전| DEC["current - 1"]
+  INC --> S["show(i)"]
+  DEC --> S
+  S --> A["is-active 토글"]
+  S --> P["진행바 갱신"]
+  S --> H["URL #n 동기화"]
+      </pre>
+      <p class="diagram-caption">Mermaid@10 · theme: dark · 숨겨진 슬라이드도 로드 시 미리 렌더</p>
+    </section>
+
+    <!-- ░░░░░░░░░░ 8 · QUOTE / TAKEAWAY ░░░░░░░░░░ .slide--quote ░░░░░░░░░░ -->
+    <section class="slide slide--quote">
+      <div class="quote-mark" aria-hidden="true">“</div>
+      <blockquote>좋은 슬라이드는 <strong>한 장에 한 가지</strong> 생각만 담는다.</blockquote>
+      <cite>발표 디자인 원칙</cite>
+    </section>
+
+    <!-- ░░░░░░░░░░ 9 · CLOSING ░░░░░░░░░░ .slide--end ░░░░░░░░░░ -->
+    <section class="slide slide--end">
+      <span class="eyebrow">마무리</span>
+      <h1>고맙습니다</h1>
+      <p class="end-summary">이 파일을 복사해 새 덱을 만드세요. 클래스만 맞추면 스타일은 자동입니다.</p>
+      <div class="end-links">
+        <a href="index.html">← 세미나 홈</a>
+        <a href="../index.html">🏠 cudy-study</a>
+      </div>
+    </section>
+
+  </div><!-- /.deck-stage -->
+</div><!-- /.deck -->
+
+<!-- Syntax highlight after DOM is ready -->
+<script>hljs.highlightAll();</script>
+<!-- Slide engine (nav, counter, progress, hash, overview, mermaid render) -->
+<script src="assets/slides.js"></script>
+
+</body>
+</html>

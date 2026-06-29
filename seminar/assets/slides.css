@@ -1,0 +1,764 @@
+/* ============================================================================
+   cudy-study · SLIDE DECK SYSTEM
+   ----------------------------------------------------------------------------
+   Presentation-grade, projection-friendly slide engine styles.
+   Shares the site design language: dark cinematic, teal-mint / cobalt accents,
+   Sora display + Noto Sans KR body + JetBrains Mono code.
+
+   No build step. Pair with assets/slides.js.
+   Markup contract:
+     <div class="deck">
+       <section class="slide slide--title"> … </section>
+       <section class="slide"> … </section>
+       …
+     </div>
+
+   Slide-type classes (add to a .slide):
+     .slide--title     Title / cover
+     .slide--agenda    Agenda / 목차 (uses <ol class="agenda">)
+     .slide--section   Section divider (big number + name)
+     (default)         Bullet content (heading + .lead + <ul>)
+     .slide--split     Two-column (wrap cols in .split > .col)
+     .slide--code      Code slide (figure.code-ex + <pre><code>)
+     .slide--diagram   Mermaid diagram (pre.mermaid)
+     .slide--quote     Quote / key takeaway
+     .slide--end       Closing slide
+============================================================================ */
+
+/* ============================================================================
+   DESIGN TOKENS  (mirrors site index.html)
+============================================================================ */
+:root {
+  /* backgrounds (dark -> lighter surfaces) */
+  --bg-base:        #080b10;
+  --bg-surface:     #0d1117;
+  --bg-elevated:    #131924;
+  --bg-card:        #111822;
+
+  /* accents (no purple — the distinctive choice) */
+  --accent-primary: #00e5c4;   /* teal-mint: primary accent */
+  --accent-glow:    #00e5c480;
+  --accent-warm:    #f0a050;   /* amber: rare contrast */
+  --accent-cool:    #3b8beb;   /* cobalt: secondary depth */
+
+  /* text */
+  --text-primary:   #eef2f8;
+  --text-secondary: #8a95a8;
+  --text-muted:     #4a5568;
+
+  /* borders / radius */
+  --border-subtle:  #1e2a38;
+  --border-mid:     #253347;
+  --radius-card:    16px;
+  --radius-pill:    100px;
+
+  /* fonts */
+  --font-display: 'Sora', sans-serif;
+  --font-body:    'Noto Sans KR', sans-serif;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* effects */
+  --glow-primary: 0 0 60px #00e5c425, 0 0 120px #00e5c410;
+  --glow-card:    0 4px 32px #00000060, 0 0 0 1px #1e2a38;
+
+  /* projection type scale — fluid, biased large for readability from the back */
+  --fs-display:  clamp(48px, 7vw, 104px);   /* title / section big text */
+  --fs-h1:       clamp(34px, 4.6vw, 62px);  /* slide heading */
+  --fs-h2:       clamp(26px, 3vw, 40px);    /* sub heading */
+  --fs-lead:     clamp(20px, 2.2vw, 30px);  /* lead paragraph */
+  --fs-body:     clamp(18px, 1.9vw, 26px);  /* bullets / body */
+  --fs-small:    clamp(14px, 1.4vw, 18px);  /* captions / meta */
+}
+
+/* ============================================================================
+   RESET & BASE
+============================================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;            /* deck owns the viewport; one slide at a time */
+}
+
+/* ============================================================================
+   AMBIENT BACKGROUND — fixed aurora blobs + faint masked grid
+   (matches site; sits behind every slide)
+============================================================================ */
+.deck-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.deck-bg::before,
+.deck-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.06;
+}
+
+.deck-bg::before {
+  width: 720px; height: 720px;
+  background: radial-gradient(circle, var(--accent-primary) 0%, transparent 70%);
+  top: -220px; left: -180px;
+  animation: aurora-drift 18s ease-in-out infinite alternate;
+}
+
+.deck-bg::after {
+  width: 640px; height: 640px;
+  background: radial-gradient(circle, var(--accent-cool) 0%, transparent 70%);
+  bottom: -180px; right: -160px;
+  animation: aurora-drift 22s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(60px, 40px) scale(1.1); }
+  100% { transform: translate(-40px, 80px) scale(0.95); }
+}
+
+.deck-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.22;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 45%, black 25%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 45%, black 25%, transparent 100%);
+}
+
+/* ============================================================================
+   DECK + SLIDE LAYOUT
+   The deck fills the viewport. JS toggles .is-active on exactly one slide.
+   16:9-friendly: content centered, capped max-width, generous padding.
+============================================================================ */
+.deck {
+  position: relative;
+  z-index: 1;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: none;                 /* hidden by default */
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(40px, 6vh, 88px) clamp(40px, 7vw, 120px);
+  /* inner content cap so lines stay readable on ultrawide projectors */
+}
+
+.slide.is-active {
+  display: flex;
+}
+
+/* A consistent inner column for all slides */
+.slide > * { max-width: 1180px; margin-left: auto; margin-right: auto; width: 100%; }
+
+/* Entrance animation — orchestrated, single tasteful motion per slide.
+   Children with [data-stagger] cascade in. */
+.slide.is-active.animate-in > * {
+  animation: slide-rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.slide.is-active.animate-in > *:nth-child(2) { animation-delay: 0.08s; }
+.slide.is-active.animate-in > *:nth-child(3) { animation-delay: 0.16s; }
+.slide.is-active.animate-in > *:nth-child(4) { animation-delay: 0.24s; }
+.slide.is-active.animate-in > *:nth-child(5) { animation-delay: 0.32s; }
+.slide.is-active.animate-in > *:nth-child(6) { animation-delay: 0.40s; }
+
+@keyframes slide-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================================================
+   SHARED TYPOGRAPHY PRIMITIVES
+============================================================================ */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-display);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  margin-bottom: 24px;
+}
+.eyebrow::before {
+  content: '';
+  width: 28px; height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.slide h1,
+.slide h2 {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.slide h1 { font-size: var(--fs-h1); font-weight: 700; margin-bottom: 28px; }
+.slide h2 { font-size: var(--fs-h2); font-weight: 600; margin-bottom: 18px; }
+
+.lead {
+  font-size: var(--fs-lead);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 32px;
+  max-width: 24ch;            /* keep lead lines punchy */
+}
+.slide--split .lead,
+.slide--quote .lead { max-width: none; }
+
+.accent       { color: var(--accent-primary); }
+.accent-cool  { color: var(--accent-cool); }
+.accent-warm  { color: var(--accent-warm); }
+
+/* gradient text helper (title accent) */
+.grad {
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-cool) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ============================================================================
+   BULLET LISTS (default content slide)
+============================================================================ */
+.slide ul.bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 1.8vh, 22px);
+}
+.slide ul.bullets > li {
+  position: relative;
+  padding-left: 34px;
+  font-size: var(--fs-body);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.slide ul.bullets > li::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0.62em;
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  background: var(--accent-primary);
+  box-shadow: 0 0 12px var(--accent-glow);
+  transform: rotate(45deg);
+}
+.slide ul.bullets > li .muted { color: var(--text-secondary); }
+/* nested sub-bullets */
+.slide ul.bullets ul {
+  list-style: none;
+  margin-top: 10px;
+  padding-left: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.slide ul.bullets ul > li {
+  position: relative;
+  padding-left: 22px;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+.slide ul.bullets ul > li::before {
+  content: '';
+  position: absolute;
+  left: 2px; top: 0.7em;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* ============================================================================
+   .slide--title  — cover
+============================================================================ */
+.slide--title { text-align: left; }
+.slide--title .deck-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.0;
+  margin-bottom: 24px;
+}
+.slide--title .deck-subtitle {
+  font-family: var(--font-display);
+  font-size: var(--fs-lead);
+  font-weight: 400;
+  color: var(--text-secondary);
+  letter-spacing: -0.01em;
+  margin-bottom: 48px;
+  max-width: 30ch;
+}
+.slide--title .presenter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.slide--title .presenter .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  box-shadow: 0 0 12px var(--accent-primary);
+}
+
+/* ============================================================================
+   .slide--agenda  — numbered table of contents
+============================================================================ */
+.slide--agenda ol.agenda {
+  list-style: none;
+  counter-reset: agenda;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(12px, 2vh, 20px);
+}
+.slide--agenda ol.agenda > li {
+  counter-increment: agenda;
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  font-size: var(--fs-lead);
+  color: var(--text-primary);
+  padding-bottom: clamp(12px, 2vh, 20px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.slide--agenda ol.agenda > li::before {
+  content: counter(agenda, decimal-leading-zero);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-small);
+  letter-spacing: 0.1em;
+  color: var(--accent-primary);
+  min-width: 2.4em;
+}
+.slide--agenda ol.agenda > li .agenda-note {
+  margin-left: auto;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
+/* ============================================================================
+   .slide--section  — chapter divider (big number + name)
+============================================================================ */
+.slide--section { justify-content: center; }
+.slide--section .section-num {
+  font-family: var(--font-display);
+  font-size: clamp(96px, 18vw, 260px);
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 0.85;
+  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-cool) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+.slide--section .section-name {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+}
+.slide--section .section-desc {
+  font-size: var(--fs-lead);
+  color: var(--text-secondary);
+  margin-top: 18px;
+  max-width: 36ch;
+}
+
+/* ============================================================================
+   .slide--split  — two columns
+   markup: <div class="split"><div class="col">…</div><div class="col">…</div></div>
+============================================================================ */
+.slide--split .split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(28px, 4vw, 64px);
+  align-items: start;
+}
+.slide--split .col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* a card-styled column variant */
+.slide--split .col.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: clamp(22px, 3vw, 38px);
+  box-shadow: var(--glow-card);
+}
+.slide--split .col .col-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+}
+.slide--split .col.card:nth-child(2) .col-label,
+.slide--split .col + .col .col-label { color: var(--accent-cool); }
+.slide--split .col p { font-size: var(--fs-body); color: var(--text-secondary); line-height: 1.5; }
+
+/* ============================================================================
+   .slide--code  — code card with source citation
+   markup:
+     <figure class="code-ex">
+       <pre><code class="language-typescript">…</code></pre>
+       <figcaption><code class="src">file.ts:42</code> — 설명</figcaption>
+     </figure>
+============================================================================ */
+.slide--code { justify-content: center; }
+
+figure.code-ex {
+  background: var(--bg-card);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--glow-card);
+  width: 100%;
+}
+/* faux window header bar */
+figure.code-ex::before {
+  content: '';
+  display: block;
+  height: 38px;
+  background:
+    radial-gradient(circle 5px at 22px 19px, #ff5f57 0 5px, transparent 6px),
+    radial-gradient(circle 5px at 42px 19px, #febc2e 0 5px, transparent 6px),
+    radial-gradient(circle 5px at 62px 19px, #28c840 0 5px, transparent 6px),
+    var(--bg-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+figure.code-ex pre {
+  margin: 0;
+  padding: clamp(20px, 2.4vw, 32px) clamp(22px, 2.6vw, 36px);
+  overflow: auto;
+  max-height: 56vh;
+}
+/* let highlight.js github-dark own token colors; we only style the container */
+figure.code-ex pre code {
+  font-family: var(--font-mono);
+  font-size: clamp(15px, 1.5vw, 21px);
+  line-height: 1.65;
+  background: transparent;
+  letter-spacing: -0.01em;
+}
+figure.code-ex figcaption {
+  padding: 14px clamp(22px, 2.6vw, 36px);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+figure.code-ex figcaption code.src {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--accent-primary);
+  background: rgba(0, 229, 196, 0.08);
+  border: 1px solid rgba(0, 229, 196, 0.2);
+  padding: 2px 9px;
+  border-radius: 6px;
+  margin-right: 6px;
+}
+/* inline code anywhere on a slide */
+.slide :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  color: var(--accent-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* ============================================================================
+   .slide--diagram  — Mermaid
+============================================================================ */
+.slide--diagram { justify-content: center; }
+.slide--diagram h2 { text-align: center; margin-bottom: 28px; }
+.slide--diagram pre.mermaid {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: clamp(24px, 3vw, 44px);
+  box-shadow: var(--glow-card);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 40vh;
+  max-height: 64vh;
+  overflow: auto;
+}
+.slide--diagram pre.mermaid svg { max-width: 100%; height: auto; }
+.slide--diagram .diagram-caption {
+  text-align: center;
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  margin-top: 18px;
+}
+
+/* ============================================================================
+   .slide--quote  — big statement / key takeaway
+============================================================================ */
+.slide--quote { justify-content: center; }
+.slide--quote .quote-mark {
+  font-family: var(--font-display);
+  font-size: clamp(80px, 12vw, 160px);
+  font-weight: 800;
+  line-height: 0.6;
+  color: var(--accent-primary);
+  opacity: 0.5;
+  margin-bottom: 8px;
+}
+.slide--quote blockquote {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--text-primary);
+  max-width: 22ch;
+}
+.slide--quote blockquote strong { color: var(--accent-primary); font-weight: 700; }
+.slide--quote cite {
+  display: block;
+  margin-top: 32px;
+  font-family: var(--font-display);
+  font-style: normal;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.slide--quote cite::before { content: '— '; }
+
+/* ============================================================================
+   .slide--end  — closing
+============================================================================ */
+.slide--end { justify-content: center; }
+.slide--end h1 { font-size: var(--fs-display); font-weight: 800; letter-spacing: -0.04em; }
+.slide--end .end-summary {
+  font-size: var(--fs-lead);
+  color: var(--text-secondary);
+  margin: 24px 0 40px;
+  max-width: 34ch;
+}
+.slide--end .end-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.slide--end .end-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  text-decoration: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-mid);
+  padding: 12px 22px;
+  border-radius: var(--radius-pill);
+  transition: border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.slide--end .end-links a:hover {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 24px rgba(0, 229, 196, 0.15);
+}
+
+/* ============================================================================
+   CHROME — progress bar + slide counter + hint
+   (fixed overlays, above all slides)
+============================================================================ */
+.deck-progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  width: 0;
+  z-index: 50;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-cool));
+  box-shadow: 0 0 16px var(--accent-glow);
+  transition: width 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.deck-counter {
+  position: fixed;
+  bottom: 22px; right: 26px;
+  z-index: 50;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  background: rgba(13, 17, 23, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  user-select: none;
+}
+.deck-counter .cur { color: var(--accent-primary); }
+.deck-counter .sep { color: var(--text-muted); margin: 0 2px; }
+
+/* keyboard hint — fades after first nav */
+.deck-hint {
+  position: fixed;
+  bottom: 22px; left: 26px;
+  z-index: 50;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  user-select: none;
+  transition: opacity 0.5s ease;
+}
+.deck-hint kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin: 0 1px;
+}
+.deck.has-navigated .deck-hint { opacity: 0; pointer-events: none; }
+
+/* ============================================================================
+   OVERVIEW / GRID MODE  (toggled with `o`)
+   Renders all slides as scaled thumbnails; click to jump.
+============================================================================ */
+.deck.is-overview { overflow: auto; height: auto; min-height: 100vh; }
+.deck.is-overview .deck-progress,
+.deck.is-overview .deck-counter,
+.deck.is-overview .deck-hint { display: none; }
+
+.deck.is-overview .deck-stage {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 22px;
+  padding: 80px 40px 40px;
+}
+.deck.is-overview .slide {
+  position: relative;
+  inset: auto;
+  display: flex;                /* all visible in overview */
+  aspect-ratio: 16 / 9;
+  height: auto;
+  padding: 22px 26px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  overflow: hidden;
+  cursor: pointer;
+  transform: scale(1);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  /* shrink type so a full slide fits the thumbnail */
+  font-size: 0.42em;
+}
+.deck.is-overview .slide > * { animation: none !important; }
+.deck.is-overview .slide:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 28px rgba(0, 229, 196, 0.18);
+  transform: translateY(-4px);
+}
+.deck.is-overview .slide.is-active {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary);
+}
+.deck.is-overview .slide::after {
+  content: attr(data-index);
+  position: absolute;
+  bottom: 8px; right: 12px;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+/* in overview, the normal stage wrapper exists; in single mode it's transparent */
+.deck-stage { display: contents; }
+
+.overview-bar {
+  position: fixed;
+  top: 22px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  font-family: var(--font-display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  background: rgba(13, 17, 23, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-mid);
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  display: none;
+}
+.deck.is-overview .overview-bar { display: block; }
+
+/* ============================================================================
+   RESPONSIVE — down to laptop screens
+============================================================================ */
+@media (max-width: 960px) {
+  .slide { padding: clamp(32px, 5vh, 56px) clamp(28px, 6vw, 56px); }
+  .slide--split .split { grid-template-columns: 1fr; gap: 24px; }
+  .deck.is-overview .deck-stage { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .deck-hint { display: none; }
+  .lead, .slide--title .deck-subtitle { max-width: none; }
+}
+
+/* ============================================================================
+   REDUCED MOTION — disable all non-essential animation
+============================================================================ */
+@media (prefers-reduced-motion: reduce) {
+  .deck-bg::before,
+  .deck-bg::after { animation: none; }
+  .slide.is-active.animate-in > * { animation: none; }
+  .deck-progress { transition: none; }
+  .slide--end .end-links a,
+  .deck.is-overview .slide { transition: none; }
+}

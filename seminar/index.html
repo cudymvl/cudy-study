@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>세미나 · cudy-study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+<style>
+  /* ===== tokens (mirror site) ===== */
+  :root {
+    --bg-base:#080b10; --bg-surface:#0d1117; --bg-elevated:#131924; --bg-card:#111822;
+    --accent-primary:#00e5c4; --accent-cool:#3b8beb; --accent-warm:#f0a050;
+    --text-primary:#eef2f8; --text-secondary:#8a95a8; --text-muted:#4a5568;
+    --border-subtle:#1e2a38; --border-mid:#253347;
+    --radius-card:16px; --radius-pill:100px;
+    --font-display:'Sora',sans-serif; --font-body:'Noto Sans KR',sans-serif;
+    --glow-card:0 4px 32px #00000060, 0 0 0 1px #1e2a38;
+    --glow-hover:0 8px 48px #00000080, 0 0 0 1px #253347, 0 0 40px #00e5c415;
+  }
+  *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+  body {
+    background:var(--bg-base); color:var(--text-primary);
+    font-family:var(--font-body); font-size:16px; line-height:1.6;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden; min-height:100vh;
+  }
+
+  /* ===== ambient background ===== */
+  .bg-aurora { position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  .bg-aurora::before,.bg-aurora::after { content:''; position:absolute; border-radius:50%; filter:blur(120px); opacity:0.06; }
+  .bg-aurora::before { width:700px; height:700px; background:radial-gradient(circle,var(--accent-primary) 0%,transparent 70%); top:-200px; left:-200px; animation:drift 18s ease-in-out infinite alternate; }
+  .bg-aurora::after { width:600px; height:600px; background:radial-gradient(circle,var(--accent-cool) 0%,transparent 70%); bottom:-150px; right:-150px; animation:drift 22s ease-in-out infinite alternate-reverse; }
+  @keyframes drift { 0%{transform:translate(0,0) scale(1);} 50%{transform:translate(60px,40px) scale(1.1);} 100%{transform:translate(-40px,80px) scale(0.95);} }
+  .bg-grid {
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:linear-gradient(var(--border-subtle) 1px,transparent 1px),linear-gradient(90deg,var(--border-subtle) 1px,transparent 1px);
+    background-size:64px 64px; opacity:0.3;
+    mask-image:radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%);
+    -webkit-mask-image:radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%);
+  }
+
+  /* ===== nav ===== */
+  nav {
+    position:sticky; top:0; z-index:100;
+    backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4);
+    background:rgba(8,11,16,0.75); border-bottom:1px solid var(--border-subtle);
+  }
+  .nav-inner { max-width:1120px; margin:0 auto; padding:0 24px; height:60px; display:flex; align-items:center; justify-content:space-between; }
+  .nav-logo { font-family:var(--font-display); font-size:17px; font-weight:700; letter-spacing:-0.02em; color:var(--text-primary); text-decoration:none; display:flex; align-items:center; gap:10px; }
+  .nav-logo-dot { width:8px; height:8px; border-radius:50%; background:var(--accent-primary); box-shadow:0 0 10px var(--accent-primary); animation:pulse 3s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:0.6; transform:scale(0.75);} }
+  .nav-home { font-family:var(--font-display); font-size:13px; font-weight:600; color:var(--text-secondary); text-decoration:none; transition:color 0.2s; }
+  .nav-home:hover { color:var(--accent-primary); }
+
+  /* ===== wrap ===== */
+  .site-wrap { position:relative; z-index:1; max-width:1120px; margin:0 auto; padding:0 24px; }
+
+  /* ===== hero ===== */
+  .hero { padding:120px 0 64px; }
+  .hero-eyebrow {
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:var(--font-display); font-size:11px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--accent-primary); background:rgba(0,229,196,0.06); border:1px solid rgba(0,229,196,0.18);
+    padding:6px 14px; border-radius:var(--radius-pill); margin-bottom:28px; animation:fade-up 0.6s ease both;
+  }
+  .hero-title { font-family:var(--font-display); font-size:clamp(40px,6.5vw,76px); font-weight:800; letter-spacing:-0.04em; line-height:1.0; margin-bottom:16px; animation:fade-up 0.6s 0.1s ease both; }
+  .hero-title .grad { background:linear-gradient(135deg,var(--accent-primary) 0%,var(--accent-cool) 100%); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .hero-sub { font-family:var(--font-display); font-size:clamp(16px,2vw,20px); font-weight:400; color:var(--text-secondary); letter-spacing:-0.01em; max-width:48ch; animation:fade-up 0.6s 0.2s ease both; }
+  @keyframes fade-up { from{opacity:0; transform:translateY(24px);} to{opacity:1; transform:translateY(0);} }
+
+  .section-divider { height:1px; background:linear-gradient(90deg,transparent,var(--border-mid),transparent); max-width:600px; }
+
+  /* ===== deck cards ===== */
+  .deck-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:48px 0 120px; }
+  .deck-card {
+    display:block; text-decoration:none; position:relative; overflow:hidden;
+    background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:var(--radius-card);
+    padding:36px; box-shadow:var(--glow-card);
+    transition:transform 0.3s cubic-bezier(0.22,1,0.36,1), box-shadow 0.3s cubic-bezier(0.22,1,0.36,1), border-color 0.3s ease;
+  }
+  .deck-card::before { content:''; position:absolute; inset:0; pointer-events:none; transition:opacity 0.3s ease;
+    background:radial-gradient(ellipse 60% 50% at 0% 0%,rgba(0,229,196,0.05) 0%,transparent 70%); }
+  .deck-card:nth-child(2)::before { background:radial-gradient(ellipse 60% 50% at 0% 0%,rgba(59,139,235,0.06) 0%,transparent 70%); }
+  .deck-card:hover { transform:translateY(-6px); box-shadow:var(--glow-hover); border-color:var(--border-mid); }
+  .deck-deco-num { position:absolute; top:20px; right:28px; font-family:var(--font-display); font-size:80px; font-weight:800; letter-spacing:-0.06em; color:rgba(255,255,255,0.025); line-height:1; pointer-events:none; user-select:none; }
+  .deck-tag { font-family:var(--font-display); font-size:11px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:var(--accent-primary); margin-bottom:18px; display:flex; align-items:center; gap:8px; }
+  .deck-card:nth-child(2) .deck-tag { color:var(--accent-cool); }
+  .deck-tag::before { content:''; display:inline-block; width:20px; height:1px; background:currentColor; opacity:0.6; }
+  .deck-name { font-family:var(--font-display); font-size:22px; font-weight:700; letter-spacing:-0.02em; color:var(--text-primary); line-height:1.3; margin-bottom:10px; transition:color 0.2s; }
+  .deck-card:hover .deck-name { color:#fff; }
+  .deck-desc { font-size:14px; color:var(--text-secondary); line-height:1.6; margin-bottom:26px; }
+  .deck-cta { display:inline-flex; align-items:center; gap:8px; font-family:var(--font-display); font-size:13px; font-weight:600; color:var(--accent-primary); transition:gap 0.2s; }
+  .deck-card:nth-child(2) .deck-cta { color:var(--accent-cool); }
+  .deck-card:hover .deck-cta { gap:14px; }
+
+  footer { border-top:1px solid var(--border-subtle); padding:40px 0 48px; }
+  .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+  .footer-logo { font-family:var(--font-display); font-size:15px; font-weight:700; color:var(--text-secondary); letter-spacing:-0.02em; }
+
+  @media (max-width:768px) {
+    .deck-grid { grid-template-columns:1fr; }
+    .deck-card { padding:28px; }
+    .hero { padding:80px 0 48px; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    .bg-aurora::before,.bg-aurora::after,.nav-logo-dot,.hero-eyebrow,.hero-title,.hero-sub { animation:none; }
+    .deck-card,.deck-card:hover,.deck-cta { transition:none; transform:none; }
+  }
+</style>
+</head>
+
+<body>
+
+<div class="bg-aurora" aria-hidden="true"></div>
+<div class="bg-grid" aria-hidden="true"></div>
+
+<nav>
+  <div class="nav-inner">
+    <a href="index.html" class="nav-logo">
+      <span class="nav-logo-dot" aria-hidden="true"></span>
+      cudy-study · 세미나
+    </a>
+    <a href="../index.html" class="nav-home">🏠 Home</a>
+  </div>
+</nav>
+
+<main>
+  <div class="site-wrap">
+
+    <section class="hero" aria-label="히어로">
+      <span class="hero-eyebrow">Tech Seminar</span>
+      <h1 class="hero-title"><span class="grad">세미나</span> 슬라이드</h1>
+      <p class="hero-sub">에이전트의 내부 원리와 방법론을, 발표용 슬라이드로 풀어낸 두 개의 덱.</p>
+    </section>
+
+    <div class="section-divider"></div>
+
+    <section aria-label="슬라이드 덱">
+      <div class="deck-grid">
+
+        <a href="openclaude.html" class="deck-card" aria-label="DECK 01 — openclaude · 에이전트 내부 원리">
+          <span class="deck-deco-num" aria-hidden="true">01</span>
+          <p class="deck-tag">Deck 01</p>
+          <h2 class="deck-name">openclaude<br>— 에이전트 내부 원리</h2>
+          <p class="deck-desc">에이전트가 한 턴을 처리하는 과정을 코드와 다이어그램으로 따라간다.</p>
+          <span class="deck-cta">슬라이드 열기 <span aria-hidden="true">→</span></span>
+        </a>
+
+        <a href="superpowers.html" class="deck-card" aria-label="DECK 02 — superpowers · 에이전트 방법론">
+          <span class="deck-deco-num" aria-hidden="true">02</span>
+          <p class="deck-tag">Deck 02</p>
+          <h2 class="deck-name">superpowers<br>— 에이전트 방법론</h2>
+          <p class="deck-desc">스펙 → 계획 → 서브에이전트 실행으로 이어지는 작업 방법론.</p>
+          <span class="deck-cta">슬라이드 열기 <span aria-hidden="true">→</span></span>
+        </a>
+
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <div class="site-wrap">
+    <div class="footer-inner">
+      <span class="footer-logo">cudy-study · 세미나</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
