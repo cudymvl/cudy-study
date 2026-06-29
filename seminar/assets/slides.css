@@ -523,7 +523,7 @@ figure.code-ex figcaption code.src {
   max-height: 64vh;
   overflow: auto;
 }
-.slide--diagram pre.mermaid svg { max-width: 100%; height: auto; }
+.slide--diagram pre.mermaid svg { max-width: 100%; max-height: 52vh; width: auto; height: auto; }
 .slide--diagram .diagram-caption {
   text-align: center;
   font-size: var(--fs-small);
