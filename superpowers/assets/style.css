@@ -1,54 +1,598 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+
+/* ============================================================
+   cudy-study — shared module stylesheet
+   "modern / cinematic" design language
+   Mirrors the landing (index.html) aesthetic.
+   IMPORTANT: every legacy class/selector name is preserved so
+   the 20 module pages restyle automatically with no HTML edits.
+============================================================ */
+
+/* ------------------------------------------------------------
+   DESIGN TOKENS
+------------------------------------------------------------ */
 :root {
-  --bg: #0d1117; --bg2: #161b22; --fg: #e6edf3; --muted: #8b949e;
-  --accent: #58a6ff; --accent2: #d2a8ff; --border: #30363d; --code-bg: #161b22;
-  --maxw: 920px;
+  --bg-base:        #080b10;
+  --bg-surface:     #0d1117;
+  --bg-elevated:    #131924;
+  --bg-card:        #111822;
+
+  --accent-primary: #00e5c4;   /* teal-mint */
+  --accent-glow:    #00e5c480;
+  --accent-warm:    #f0a050;    /* amber */
+  --accent-cool:    #3b8beb;    /* cobalt */
+
+  --text-primary:   #eef2f8;
+  --text-secondary: #8a95a8;
+  --text-muted:     #4a5568;
+
+  --border-subtle:  #1e2a38;
+  --border-mid:     #253347;
+
+  --radius-card:    16px;
+  --radius-pill:    100px;
+
+  --font-display: 'Sora', sans-serif;
+  --font-body:    'Noto Sans KR', sans-serif;
+  --font-mono:    'SFMono-Regular', 'JetBrains Mono', 'Fira Code', ui-monospace, Menlo, Consolas, monospace;
+
+  --glow-card:  0 4px 32px #00000060, 0 0 0 1px #1e2a38;
+  --glow-hover: 0 8px 48px #00000080, 0 0 0 1px #253347, 0 0 40px #00e5c415;
 }
-* { box-sizing: border-box; }
+
+/* ------------------------------------------------------------
+   RESET & BASE
+------------------------------------------------------------ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
 body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font-family: -apple-system, "Apple SD Gothic Neo", "Pretendard", system-ui, sans-serif;
-  line-height: 1.75; font-size: 16px;
+  position: relative;            /* keep content above fixed bg pseudo-elements */
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
 }
+
+/* ------------------------------------------------------------
+   CANVAS BACKGROUND — CSS-only aurora + grid via body pseudo-els
+   (module pages have no .bg-aurora / .bg-grid DOM nodes)
+------------------------------------------------------------ */
+body::before {
+  /* animated aurora mesh */
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(640px 640px at 12% -8%,  rgba(0, 229, 196, 0.10) 0%, transparent 60%),
+    radial-gradient(560px 560px at 92% 108%, rgba(59, 139, 235, 0.10) 0%, transparent 60%),
+    radial-gradient(480px 480px at 80% 0%,   rgba(240, 160, 80, 0.045) 0%, transparent 60%);
+  filter: blur(40px);
+  animation: aurora-drift 26s ease-in-out infinite alternate;
+}
+
+body::after {
+  /* faint structural grid, masked to fade at the edges */
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.22;
+  -webkit-mask-image: radial-gradient(ellipse 85% 75% at 50% 35%, #000 25%, transparent 100%);
+          mask-image: radial-gradient(ellipse 85% 75% at 50% 35%, #000 25%, transparent 100%);
+}
+
+@keyframes aurora-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(40px, 30px, 0) scale(1.08); }
+  100% { transform: translate3d(-30px, 50px, 0) scale(0.96); }
+}
+
+/* ------------------------------------------------------------
+   TOP NAV — sticky, blurred, modern bar
+------------------------------------------------------------ */
 .topnav {
-  position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 4px;
-  padding: 10px 16px; background: rgba(13,17,23,.9); backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 10px max(20px, calc((100% - 1120px) / 2 + 24px));
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: rgba(8, 11, 16, 0.78);
+  border-bottom: 1px solid var(--border-subtle);
 }
+
 .topnav a {
-  color: var(--muted); text-decoration: none; font-size: 13px;
-  padding: 4px 10px; border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+  transition: color 0.2s ease, background-color 0.2s ease;
 }
-.topnav a:hover { color: var(--fg); background: var(--bg2); }
-.topnav a.active { color: var(--accent); background: var(--bg2); font-weight: 600; }
-.content { max-width: var(--maxw); margin: 0 auto; padding: 32px 20px 80px; }
-.module-head { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 28px; }
+
+/* Home link gets a touch of emphasis */
+.topnav a:first-child {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.topnav a:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.topnav a.active {
+  color: var(--accent-primary);
+  background: rgba(0, 229, 196, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(0, 229, 196, 0.22);
+}
+
+/* ------------------------------------------------------------
+   CONTENT WRAPPER
+------------------------------------------------------------ */
+.content {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 56px 24px 40px;
+}
+
+/* ------------------------------------------------------------
+   MODULE HEAD
+------------------------------------------------------------ */
+.module-head {
+  margin-bottom: 56px;
+  padding-bottom: 36px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .badge {
-  display: inline-block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--accent2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  background: rgba(0, 229, 196, 0.07);
+  border: 1px solid rgba(0, 229, 196, 0.20);
+  padding: 5px 13px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 22px;
 }
-.module-head h1 { font-size: 30px; margin: 12px 0 6px; }
-.subtitle { color: var(--muted); margin: 0; font-size: 17px; }
-section { margin: 40px 0; }
-section h2 { font-size: 22px; border-left: 3px solid var(--accent); padding-left: 12px; }
-section h3 { font-size: 18px; color: var(--accent2); }
-p, li { color: var(--fg); }
-code { font-family: "SFMono-Regular", ui-monospace, Menlo, monospace; font-size: .9em; }
-:not(pre) > code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; color: var(--accent2); }
-pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow: auto; }
-figure.code-ex { margin: 20px 0; }
-figure.code-ex figcaption { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
-figcaption code.src { color: var(--accent); background: var(--bg2); padding: 2px 8px; border-radius: 4px; }
-pre.mermaid { background: var(--bg2); text-align: center; }
-blockquote { border-left: 3px solid var(--accent2); margin: 16px 0; padding: 4px 16px; color: var(--muted); background: var(--bg2); border-radius: 0 8px 8px 0; }
-table { border-collapse: collapse; width: 100%; margin: 16px 0; }
-th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; font-size: 14px; }
-th { background: var(--bg2); }
-.pager { max-width: var(--maxw); margin: 0 auto; padding: 24px 20px 60px; display: flex; justify-content: space-between; border-top: 1px solid var(--border); }
-.pager a { color: var(--accent); text-decoration: none; }
-.module-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin: 28px 0; }
-.module-card { display: block; text-decoration: none; color: var(--fg); background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 18px; transition: border-color .15s, transform .15s; }
-.module-card:hover { border-color: var(--accent); transform: translateY(-2px); }
-.module-card .num { color: var(--accent2); font-size: 13px; font-weight: 600; }
-.module-card h3 { margin: 6px 0; font-size: 17px; color: var(--fg); }
-.module-card p { margin: 0; font-size: 13px; color: var(--muted); }
-.callout { background: var(--bg2); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 16px 0; }
+
+.module-head h1 {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 5.5vw, 56px);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--text-primary);
+  margin-bottom: 18px;
+}
+
+.subtitle {
+  font-size: clamp(15px, 2vw, 18px);
+  font-weight: 300;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  max-width: 70ch;
+}
+
+/* ------------------------------------------------------------
+   SECTIONS & HEADINGS
+------------------------------------------------------------ */
+section {
+  margin-bottom: 64px;
+}
+
+section h2 {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 3.5vw, 32px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 24px;
+  padding-left: 18px;
+  position: relative;
+}
+
+/* teal-mint left accent bar */
+section h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.12em;
+  bottom: 0.12em;
+  width: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, var(--accent-primary), var(--accent-cool));
+  box-shadow: 0 0 16px rgba(0, 229, 196, 0.35);
+}
+
+section h3 {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.4vw, 21px);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--accent-cool);
+  line-height: 1.3;
+  margin: 40px 0 16px;
+}
+
+/* ------------------------------------------------------------
+   PROSE
+------------------------------------------------------------ */
+p {
+  color: var(--text-secondary);
+  margin-bottom: 18px;
+  line-height: 1.8;
+}
+
+p strong, li strong, td strong { color: var(--text-primary); font-weight: 700; }
+p em, li em, td em { color: var(--text-primary); font-style: italic; }
+
+a:not(.topnav a):not(.pager a):not(.module-card) {
+  color: var(--accent-primary);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(0, 229, 196, 0.3);
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+a:not(.topnav a):not(.pager a):not(.module-card):hover {
+  color: #fff;
+  border-bottom-color: var(--accent-primary);
+}
+
+ul, ol {
+  margin: 0 0 22px;
+  padding-left: 1.4em;
+}
+
+li {
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  line-height: 1.75;
+}
+
+li::marker { color: var(--accent-primary); }
+
+/* ------------------------------------------------------------
+   INLINE CODE
+------------------------------------------------------------ */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+:not(pre) > code {
+  color: var(--accent-primary);
+  background: rgba(0, 229, 196, 0.07);
+  border: 1px solid rgba(0, 229, 196, 0.16);
+  padding: 1.5px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------
+   CODE BLOCKS
+   NOTE: token colors come from highlight.js github-dark CDN theme.
+   Only the <pre> container is styled here — do NOT touch pre code tokens.
+------------------------------------------------------------ */
+pre {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-mid);
+  border-radius: 12px;
+  padding: 20px 22px;
+  overflow-x: auto;
+  margin: 0;
+  box-shadow: var(--glow-card);
+  font-size: 13.5px;
+  line-height: 1.65;
+}
+
+pre code {
+  font-family: var(--font-mono);
+  /* deliberately no color/background — let github-dark own the tokens */
+  background: transparent;
+  border: 0;
+  padding: 0;
+  white-space: pre;
+}
+
+/* ------------------------------------------------------------
+   CODE EXAMPLE FIGURE
+------------------------------------------------------------ */
+figure.code-ex {
+  margin: 28px 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--glow-card);
+}
+
+figure.code-ex figcaption {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  padding: 14px 18px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* the 파일:라인 citation chip */
+figcaption code.src {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  background: var(--bg-elevated);
+  border: 1px solid rgba(0, 229, 196, 0.22);
+  padding: 2px 9px;
+  border-radius: 6px;
+  margin: 2px 2px 2px 0;
+  white-space: nowrap;
+}
+
+/* inside the figure, the <pre> sits flush with no double border/radius */
+figure.code-ex pre {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-elevated);
+}
+
+/* ------------------------------------------------------------
+   MERMAID DIAGRAMS
+------------------------------------------------------------ */
+pre.mermaid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 28px 20px;
+  margin: 28px 0;
+  box-shadow: var(--glow-card);
+  overflow-x: auto;
+  /* not a code block — neutralize monospace inheritance */
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+pre.mermaid code { font-family: inherit; }
+
+/* ------------------------------------------------------------
+   BLOCKQUOTE — elevated panel, teal left accent
+------------------------------------------------------------ */
+blockquote {
+  margin: 24px 0;
+  padding: 18px 22px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  line-height: 1.75;
+  font-style: italic;
+}
+
+blockquote em { color: var(--text-muted); font-style: normal; }
+
+/* ------------------------------------------------------------
+   TABLES
+------------------------------------------------------------ */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 24px 0;
+  font-size: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  line-height: 1.6;
+}
+
+th {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  background: var(--bg-surface);
+}
+
+td { color: var(--text-secondary); }
+
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr { transition: background-color 0.15s ease; }
+tbody tr:hover td { background: rgba(255, 255, 255, 0.018); }
+
+/* ------------------------------------------------------------
+   CALLOUT — elevated panel, teal left accent
+------------------------------------------------------------ */
+.callout {
+  margin: 24px 0;
+  padding: 18px 22px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  box-shadow: var(--glow-card);
+}
+
+.callout strong { color: var(--text-primary); }
+.callout > :last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------
+   PAGER — prev / next
+------------------------------------------------------------ */
+.pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pager a {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--accent-primary);
+  text-decoration: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.pager a:hover {
+  color: #fff;
+  background: var(--bg-elevated);
+  border-color: var(--border-mid);
+}
+
+/* if only one pager link exists, push it to the right */
+.pager a:only-child { margin-left: auto; }
+
+/* ------------------------------------------------------------
+   MODULE GRID / CARDS (study hub)
+------------------------------------------------------------ */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 18px;
+  margin: 8px 0 24px;
+}
+
+.module-card {
+  display: block;
+  text-decoration: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 26px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--glow-card);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.3s ease;
+}
+
+.module-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 60% 50% at 0% 0%, rgba(0, 229, 196, 0.06) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.module-card:hover {
+  transform: translateY(-5px);
+  box-shadow: var(--glow-hover);
+  border-color: var(--border-mid);
+}
+
+.module-card:hover::before { opacity: 1; }
+
+.module-card .num {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+  margin-bottom: 14px;
+}
+
+.module-card h3 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  line-height: 1.3;
+  margin: 0 0 10px;
+  transition: color 0.2s ease;
+}
+
+.module-card:hover h3 { color: #fff; }
+
+.module-card p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin: 0;
+}
+
+/* ------------------------------------------------------------
+   RESPONSIVE
+------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .content { padding: 36px 18px 32px; }
+  .topnav { padding: 8px 14px; gap: 0; }
+  .topnav a { font-size: 12px; padding: 5px 9px; }
+  .module-grid { grid-template-columns: 1fr; }
+  table { font-size: 13px; }
+  th, td { padding: 10px 12px; }
+  .pager { flex-direction: column; padding: 24px 18px 48px; }
+  .pager a:only-child { margin-left: 0; }
+}
+
+/* ------------------------------------------------------------
+   PREFERS REDUCED MOTION
+------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  body::before { animation: none; }
+  *, *::before, *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
